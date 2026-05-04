@@ -1,0 +1,21 @@
+{
+  "universe_usage_history": [
+    {
+      "universe": "The Goonies",
+      "used_at": "2026-05-04T16:13:15-05:00",
+      "project": "eps-parent-manager"
+    }
+  ],
+  "assignment_cast_snapshots": {
+    "goonies-eps-2026-05-04": {
+      "universe": "The Goonies",
+      "date": "2026-05-04T16:13:15-05:00",
+      "agents": [
+        { "name": "Mikey", "role": "Lead" },
+        { "name": "Data", "role": "Integration Dev" },
+        { "name": "Mouth", "role": "Data Engineer" },
+        { "name": "Chunk", "role": "Tester" }
+      ]
+    }
+  }
+}
