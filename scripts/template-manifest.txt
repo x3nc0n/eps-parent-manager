@@ -1,0 +1,14 @@
+# Template layer paths that are safe to overlay during updates.
+# Personal files such as vault/, .env, and config/personal.yaml are never listed here.
+
+scripts/
+mcp-servers/
+skills/
+tools/
+docs/
+.github/
+.copilot/
+package.json
+package-lock.json
+tsconfig.json
+README.md

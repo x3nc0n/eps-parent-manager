@@ -6,3 +6,8 @@
 .squad/.scratch/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
+# Personal layer
+vault/
+.env
+config/personal.yaml
+config/schools.yaml

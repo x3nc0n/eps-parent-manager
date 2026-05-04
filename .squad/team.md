@@ -18,6 +18,20 @@
 | Chunk | Tester | `.squad/agents/chunk/charter.md` | 🧪 Active |
 | Scribe | Session Logger | `.squad/agents/scribe/charter.md` | 📋 Active |
 | Ralph | Work Monitor | — | 🔄 Monitor |
+| @copilot | Coding Agent | `copilot-instructions.md` | 🤖 Active |
+
+<!-- copilot-auto-assign: true -->
+
+### @copilot Capability Profile
+
+| Category | Fit | Notes |
+|----------|-----|-------|
+| Single-file bug fixes | 🟢 | Straightforward fixes with clear scope |
+| Multi-file refactors | 🟡 | May need guidance via issue description |
+| New MCP server scaffolding | 🟡 | Can scaffold with good issue spec |
+| Test writing | 🟢 | Good at generating test cases from specs |
+| Architecture decisions | 🔴 | Route to Mikey |
+| Obsidian vault/skill design | 🔴 | Route to Mouth |
 
 ## Project Context
 

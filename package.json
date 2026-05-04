@@ -1,0 +1,14 @@
+{
+  "name": "eps-parent-manager",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Parent-owned integration toolkit for Edmond Public Schools workflows.",
+  "type": "commonjs",
+  "scripts": {
+    "validate:scripts": "bash -n scripts/setup.sh scripts/install.sh"
+  },
+  "engines": {
+    "node": ">=18",
+    "npm": ">=9"
+  }
+}
