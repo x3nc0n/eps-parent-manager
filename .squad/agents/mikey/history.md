@@ -18,4 +18,4 @@
 - **Vault strategy:** `vault-template/` seeds structure on first run. After that, vault is parent-owned. Symlink option for existing vaults.
 - **Key paths:** `scripts/setup.sh`, `scripts/setup.ps1`, `scripts/template-manifest.txt`, `vault-template/`, `config/personal.yaml.example`, `.env.example`
 - **User preference (John):** Wants other parents to have zero-friction install. No forks, no developer tooling assumptions. "Works at 6am before the bus" is the bar.
-- **Decision file:** `.squad/decisions/inbox/mikey-bootstrap-architecture.md`
+- **Decision merged:** Bootstrap architecture decision and Data's detection guardrail merged into `.squad/decisions.md` (2026-05-04T16-19). Inbox cleaned. Orchestration log written.
