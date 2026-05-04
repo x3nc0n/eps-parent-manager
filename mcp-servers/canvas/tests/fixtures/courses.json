@@ -1,0 +1,28 @@
+{
+  "headers": {
+    "link": "<https://canvas.example.test/api/v1/courses?page=2>; rel=\"next\", <https://canvas.example.test/api/v1/courses?page=3>; rel=\"last\""
+  },
+  "courses": [
+    {
+      "id": 101,
+      "name": "Math 7",
+      "courseCode": "MATH-7",
+      "teacher": "Ms. Rivera",
+      "workflowState": "available"
+    },
+    {
+      "id": 102,
+      "name": "ELA Honors",
+      "courseCode": "ELA-7H",
+      "teacher": "Mr. Chen",
+      "workflowState": "available"
+    },
+    {
+      "id": 103,
+      "name": "Art & Design",
+      "courseCode": "ART-7",
+      "teacher": "Ms. Clark",
+      "workflowState": "completed"
+    }
+  ]
+}

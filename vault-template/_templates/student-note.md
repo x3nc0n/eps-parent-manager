@@ -1,17 +1,22 @@
 ---
 type: student-note
-student:
+student-name:
+source: local
+date: {{date:YYYY-MM-DD}}
 topic:
-created: {{date:YYYY-MM-DD}}
+related-notes: []
 ---
 
 # Student Note
 
 ## Context
-- 
+-
+
+## Observations
+-
 
 ## Actions
-- 
+-
 
 ## References
-- 
+- [[ ]]

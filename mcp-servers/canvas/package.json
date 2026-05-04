@@ -1,0 +1,7 @@
+{
+  "name": "@eps-parent-manager/canvas",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canvas MCP server package.",
+  "type": "commonjs"
+}

@@ -1,0 +1,25 @@
+{
+  "courses": [
+    {
+      "id": "classroom-101",
+      "name": "Math 7",
+      "section": "1st Hour",
+      "teacherName": "Ms. Rivera",
+      "studentCount": 24
+    },
+    {
+      "id": "classroom-202",
+      "name": "Family Newsletter",
+      "section": "",
+      "teacherName": "Principal Adams",
+      "studentCount": 0
+    }
+  ],
+  "announcements": [
+    {
+      "courseId": "classroom-101",
+      "text": "Bring graph paper on Wednesday.",
+      "updatedAt": "2026-05-04T08:00:00Z"
+    }
+  ]
+}

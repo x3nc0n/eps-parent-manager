@@ -1,0 +1,34 @@
+{
+  "assignments": [
+    {
+      "id": 9001,
+      "courseId": 101,
+      "name": "Unit 9 Quiz",
+      "dueAt": "2026-05-05T08:00:00Z",
+      "pointsPossible": 20,
+      "submissionTypes": [
+        "online_quiz"
+      ]
+    },
+    {
+      "id": 9002,
+      "courseId": 101,
+      "name": "Late Work Recovery",
+      "dueAt": null,
+      "pointsPossible": 10,
+      "submissionTypes": [
+        "online_upload"
+      ]
+    },
+    {
+      "id": 9003,
+      "courseId": 102,
+      "name": "Essay Draft – Family Stories",
+      "dueAt": "2026-05-09T23:59:00Z",
+      "pointsPossible": 50,
+      "submissionTypes": [
+        "online_text_entry"
+      ]
+    }
+  ]
+}

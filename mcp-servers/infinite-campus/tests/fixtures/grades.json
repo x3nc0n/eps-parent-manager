@@ -1,0 +1,56 @@
+{
+  "students": [
+    {
+      "studentId": "ic-1001",
+      "displayName": "Alex Johnson",
+      "gradeLevel": "7",
+      "schoolName": "Central Middle School",
+      "courses": [
+        {
+          "courseName": "Math 7",
+          "teacherName": "Ms. Rivera",
+          "term": "Q4",
+          "letterGrade": "B+",
+          "percent": 88.4,
+          "missingAssignments": 0,
+          "updatedAt": "2026-05-04T07:00:00-05:00"
+        },
+        {
+          "courseName": "English Language Arts",
+          "teacherName": "Mr. Chen",
+          "term": "Q4",
+          "letterGrade": "A-",
+          "percent": 92.1,
+          "missingAssignments": 1,
+          "updatedAt": "2026-05-04T07:00:00-05:00"
+        }
+      ]
+    },
+    {
+      "studentId": "ic-1002",
+      "displayName": "Zoë O'Brien",
+      "gradeLevel": "5",
+      "schoolName": "Willow Creek Intermediate",
+      "courses": [
+        {
+          "courseName": "Science",
+          "teacherName": "Dr. Lopez",
+          "term": "Q4",
+          "letterGrade": null,
+          "percent": null,
+          "missingAssignments": 2,
+          "updatedAt": "2026-05-04T07:00:00-05:00"
+        },
+        {
+          "courseName": "Choir",
+          "teacherName": "Mrs. Patel",
+          "term": "Q4",
+          "letterGrade": "A",
+          "percent": 97.0,
+          "missingAssignments": 0,
+          "updatedAt": "2026-05-04T07:00:00-05:00"
+        }
+      ]
+    }
+  ]
+}

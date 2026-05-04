@@ -1,0 +1,14 @@
+{
+  "expiredToken": {
+    "error": {
+      "code": 401,
+      "message": "Request had invalid authentication credentials.",
+      "status": "UNAUTHENTICATED"
+    }
+  },
+  "refreshResponse": {
+    "access_token": "fresh-token",
+    "expires_in": 3600,
+    "token_type": "Bearer"
+  }
+}

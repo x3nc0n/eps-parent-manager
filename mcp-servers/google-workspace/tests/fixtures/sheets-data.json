@@ -1,0 +1,30 @@
+{
+  "spreadsheetId": "sheet-1",
+  "range": "Assignments!A1:D4",
+  "values": [
+    [
+      "Student",
+      "Assignment",
+      "Status",
+      "Score"
+    ],
+    [
+      "Alex Johnson",
+      "Math Quiz",
+      "Submitted",
+      "17/20"
+    ],
+    [
+      "Maya Patel",
+      "Essay Draft",
+      "Missing",
+      ""
+    ],
+    [
+      "Zoë O'Brien",
+      "Science Lab",
+      "Excused",
+      ""
+    ]
+  ]
+}

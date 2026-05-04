@@ -1,0 +1,50 @@
+{
+  "entries": [
+    {
+      "period": "1",
+      "courseName": "Math 7",
+      "room": "201",
+      "teacherName": "Ms. Rivera",
+      "startTime": "08:10",
+      "endTime": "09:00",
+      "days": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "source": "api"
+    },
+    {
+      "period": "2",
+      "courseName": "Science",
+      "room": "Lab 2",
+      "teacherName": "Dr. Lopez",
+      "startTime": "09:05",
+      "endTime": "09:55",
+      "days": [
+        "Mon",
+        "Tue",
+        "Wed",
+        "Thu",
+        "Fri"
+      ],
+      "source": "api"
+    },
+    {
+      "period": "3",
+      "courseName": "Advisory",
+      "room": "",
+      "teacherName": "Coach Nguyen",
+      "startTime": "10:00",
+      "endTime": "10:25",
+      "days": [
+        "Mon",
+        "Wed",
+        "Fri"
+      ],
+      "source": "api"
+    }
+  ]
+}

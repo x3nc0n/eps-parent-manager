@@ -10,3 +10,4 @@
 ## Learnings
 
 <!-- Append new learnings below. Each entry is something lasting about the project. -->
+- 2026-05-04T17:36:11-05:00 — Added a repo-level Vitest workspace and offline MCP test scaffolding so server packages can pick up client/server/error coverage as they land.

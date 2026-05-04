@@ -5,10 +5,21 @@
   "description": "Parent-owned integration toolkit for Edmond Public Schools workflows.",
   "type": "commonjs",
   "scripts": {
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts",
+    "test:pii": "vitest run --config vitest.config.ts tests/pii-check.test.ts",
     "validate:scripts": "bash -n scripts/setup.sh scripts/install.sh"
   },
   "engines": {
     "node": ">=18",
     "npm": ">=9"
+  },
+  "workspaces": [
+    "mcp-servers/infinite-campus",
+    "mcp-servers/canvas",
+    "mcp-servers/google-workspace"
+  ],
+  "devDependencies": {
+    "vitest": "^3.2.4"
   }
 }

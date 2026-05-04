@@ -1,16 +1,31 @@
 ---
 type: daily-summary
+student-name:
+source: aggregate
 date: {{date:YYYY-MM-DD}}
-student:
+week-of: {{date:gggg-[W]ww}}
+related-grade-notes: []
+related-assignment-notes: []
+related-attendance-notes: []
 ---
 
 # Daily Summary
 
-## Wins
-- 
+## Snapshot
+- Student:
+- Main theme:
+
+## Grades
+- [[ ]]
+
+## Assignments
+- [[ ]]
+
+## Attendance
+- [[ ]]
 
 ## Follow Up
-- 
+-
 
 ## Questions for Tomorrow
-- 
+-

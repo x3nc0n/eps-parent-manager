@@ -1,0 +1,25 @@
+{
+  "records": [
+    {
+      "date": "2026-05-01",
+      "status": "present",
+      "period": "All Day",
+      "notes": "",
+      "source": "api"
+    },
+    {
+      "date": "2026-05-02",
+      "status": "tardy",
+      "period": "1",
+      "notes": "Bus delay",
+      "source": "api"
+    },
+    {
+      "date": "2026-05-03",
+      "status": "excused",
+      "period": "All Day",
+      "notes": "Medical appointment",
+      "source": "api"
+    }
+  ]
+}

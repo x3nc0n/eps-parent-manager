@@ -1,0 +1,31 @@
+{
+  "submissions": [
+    {
+      "assignmentId": 9001,
+      "courseId": 101,
+      "submittedAt": "2026-05-04T12:10:00Z",
+      "score": 17,
+      "grade": "85%",
+      "late": false,
+      "missing": false
+    },
+    {
+      "assignmentId": 9002,
+      "courseId": 101,
+      "submittedAt": null,
+      "score": null,
+      "grade": null,
+      "late": true,
+      "missing": true
+    },
+    {
+      "assignmentId": 9003,
+      "courseId": 102,
+      "submittedAt": "2026-05-04T15:45:00Z",
+      "score": 46,
+      "grade": "A-",
+      "late": false,
+      "missing": false
+    }
+  ]
+}
