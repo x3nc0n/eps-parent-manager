@@ -129,6 +129,84 @@ If multiple observees exist and no default is set, the server returns a parent-f
 
 **Rationale:** Keeps sync output predictable for skills while preserving child-level isolation for multi-student families.
 
+### Decision Inbox: Streamer Mode Test Contracts
+
+**Author:** Chunk  
+**Date:** 2026-05-04T20:01:12-05:00  
+**Status:** Proposed  
+**Requested by:** John Spaid
+
+Streamer Mode masking functions follow these behavioral contracts (enforced by spec tests in `mcp-servers/infinite-campus/tests/streamer-mode.test.ts`):
+
+1. **Env var check is runtime, not module-load-time** — `isStreamerModeEnabled()` reads `process.env` on every call so toggling the var mid-process works correctly in tests.
+
+2. **All mask functions are passthrough when mode is off** — calling `maskStudentProfile(profile)` with no env vars set returns the profile unchanged, making the functions safe to call unconditionally from tool handlers.
+
+3. **Single-character last names** — a one-character last name masks to just that character (no trailing asterisks appended), preventing index-out-of-bounds on the masking logic.
+
+4. **`raw` field stripped in streamer mode** — the `raw?: unknown` escape hatch on most records could contain full API payloads with PII; it must be removed or replaced when masking is active.
+
+5. **Deterministic masking within a session** — same input → same masked output on every call. This ensures a demo session talks about a consistent fake student, not a randomly-shifting one.
+
+6. **Null scores/percentages stay null** — masking a `null` percent must not substitute a fake number; the course should still appear ungraded.
+
+### User Directive: Streamer Mode
+
+**Author:** Brady (via Copilot)  
+**Date:** 2026-05-04T19:53:48-05:00  
+**Status:** Proposed
+
+Build a "streamer mode" that hides sensitive data for demos — last names, ID numbers, actual grades, etc. should be masked/redacted when streamer mode is active.
+
+**Rationale:** User request — Brady wants to demo the tool publicly without exposing family PII.
+
+### Decision: Streamer Mode for Infinite Campus MCP
+
+**Author:** Data  
+**Date:** 2026-05-04T20:01:12.635-05:00  
+**Status:** Proposed
+
+Added Streamer Mode to the Infinite Campus MCP server. When `STREAMER_MODE=true` (or `EPS_STREAMER_MODE=1`) is set, all data returned by public client methods is passed through a deterministic masking layer before being handed back to the MCP tool layer.
+
+**What Is Masked:**
+- `lastName`: First letter + asterisks (`"Spaid"` → `"S****"`)
+- `teacherName`: First name kept, last name masked same way
+- `personId`, `studentId`, `studentNumber`: `"***REDACTED***"`
+- `birthDate`: `"XXXX-XX-XX"`
+- `schoolName`, `campusName`: `"Demo School"`
+- `profilePhotoUrl`: Removed
+- `courseId`, `sectionId`, `assignmentId`: DJB2 hex hash (`"demo-a3f2c100"`)
+- `percent`, `score`, `finalPercent`, `gpa`: Seeded perturbation (same course → same fake value)
+- `room`: `"Room XX"`
+
+**What Is Preserved:** First names, course names, letter grades, attendance status types, assignment titles, date structures (non-birthdate), source metadata, overall response shape.
+
+**Key Implementation Details:**
+- **File:** `mcp-servers/infinite-campus/src/streamer-mode.ts`
+- **Determinism:** DJB2 hash → seeded float → same course/student always produces the same masked value per session.
+- **Boundary:** Masking is applied at the public method boundary in `client.ts` only. Internal methods (`resolveStudent`, `fetchX`) receive real data so auth and API calls work correctly.
+- **Config:** `InfiniteCampusConfig.streamerMode?: boolean`; `fromEnv()` reads `STREAMER_MODE` / `EPS_STREAMER_MODE` env vars.
+- **Env docs:** `.env.example` documents both env var spellings (commented out by default).
+
+**Rationale:** "PII stays local" is a core principle. Streamer Mode is the extra safety layer for when output IS visible — demos, livestreams, screenshots. It does not depend on any vault or external service; it runs purely in-process and adds no latency beyond a cheap hash computation per field.
+
+### Decision Inbox: Infinite Campus Edmond Endpoint Mapping
+
+**Author:** Data  
+**Date:** 2026-05-04T19:49:36.037-05:00  
+**Status:** Proposed
+
+Treat the Edmond PS Infinite Campus parent portal capture as the canonical route map for the current connector pass:
+- login page `/campus/portal/parents/edmond.jsp` with POST verify at `/campus/verify.jsp`
+- student roster API `/campus/api/portal/students`
+- grade summary API `/campus/resources/portal/grades`
+- attendance API `/campus/resources/portal/attendance/events`
+- schedule-plan API `/campus/api/portal/plan`
+- assignment activity endpoints under `/campus/api/portal/assignment/*`
+- home-page notification selector `.notification__text` as the scrape fallback when detail pages fail or return 404
+
+**Rationale:** The page-level captures showed the direct `instruction/*` URLs failing with 404 while the live login flow still pulled student, grade, attendance, plan, and assignment activity data through background XHR requests. Locking the connector to the observed Edmond routes removes guessed defaults from `client.ts` and gives Brady a stable baseline for future detail-endpoint discovery without re-opening the login investigation.
+
 ## Governance
 
 - All meaningful changes require team consensus
