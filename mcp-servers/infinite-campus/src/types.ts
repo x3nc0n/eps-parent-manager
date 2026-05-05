@@ -7,6 +7,8 @@ export interface InfiniteCampusConfig {
   loginPath?: string;
   loginPagePath?: string;
   apiBasePath?: string;
+  appName?: string;
+  portalLoginPage?: string;
   defaultStudentId?: string;
   defaultStudentName?: string;
   sessionTtlMs: number;

@@ -8,7 +8,8 @@
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:pii": "vitest run --config vitest.config.ts tests/pii-check.test.ts",
-    "validate:scripts": "bash -n scripts/setup.sh scripts/install.sh"
+    "validate:scripts": "bash -n scripts/setup.sh scripts/install.sh",
+    "ic:discover": "npx tsx scripts/ic-discover.ts"
   },
   "engines": {
     "node": ">=18",
@@ -20,6 +21,9 @@
     "mcp-servers/google-workspace"
   ],
   "devDependencies": {
+    "dotenv": "^17.4.2",
+    "playwright": "^1.59.1",
+    "tsx": "^4.21.0",
     "vitest": "^3.2.4"
   }
 }

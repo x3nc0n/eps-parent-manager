@@ -77,6 +77,8 @@ export class InfiniteCampusClient {
       loginPath: env.IC_LOGIN_PATH?.trim(),
       loginPagePath: env.IC_LOGIN_PAGE_PATH?.trim(),
       apiBasePath: env.IC_API_BASE_PATH?.trim(),
+      appName: env.IC_APP_NAME?.trim(),
+      portalLoginPage: env.IC_PORTAL_LOGIN_PAGE?.trim(),
       defaultStudentId: env.IC_DEFAULT_STUDENT_ID?.trim(),
       defaultStudentName: env.IC_DEFAULT_STUDENT_NAME?.trim(),
       sessionTtlMs: parsePositiveNumber(env.IC_SESSION_TTL_MS) ?? DEFAULT_SESSION_TTL_MS,
@@ -640,11 +642,16 @@ export class InfiniteCampusClient {
   }
 
   private buildLoginAttempts(): RequestInit[] {
-    const formPayload = new URLSearchParams({
+    const appName = this.config.appName || 'portal';
+    const formFields: Record<string, string> = {
       username: this.config.username,
       password: this.config.password,
-      appName: 'portal',
-    });
+      appName,
+    };
+    if (this.config.portalLoginPage) {
+      formFields.portalLoginPage = this.config.portalLoginPage;
+    }
+    const formPayload = new URLSearchParams(formFields);
 
     return [
       {

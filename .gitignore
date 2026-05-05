@@ -14,3 +14,4 @@ vault/
 .env
 config/personal.yaml
 config/schools.yaml
+scripts/ic-captures/

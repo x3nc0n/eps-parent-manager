@@ -13,6 +13,7 @@
   },
   "include": [
     "mcp-servers/**/*.ts",
+    "scripts/**/*.ts",
     "tools/**/*.ts",
     "skills/**/*.ts"
   ]
