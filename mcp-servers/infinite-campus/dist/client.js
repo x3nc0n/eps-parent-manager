@@ -447,13 +447,18 @@ class InfiniteCampusClient {
     async fetchAssignmentsFromApi(student, term, filter) {
         const personId = this.getStudentPersonId(student);
         const today = new Date().toISOString().slice(0, 10);
+        // The *Total endpoints (missingTotal, byDateRangeTotal, recentlyScoredTotal)
+        // return only counts (numbers), not assignment objects. We need the detail endpoints.
         let paths;
         if (filter === 'missing') {
-            // When filtering for missing assignments, prioritize the missingTotal endpoint
+            // Prioritize missing-specific detail endpoints
             paths = dedupeStrings([
-                personId ? `/campus/api/portal/assignment/missingTotal${buildQuery({ personID: personId, termID: term })}` : '',
-                personId ? `/campus/api/portal/assignment/byDateRangeTotal${buildQuery({ personID: personId, startDate: `${today}T00:00:00`, endDate: `${today}T00:00:00` })}` : '',
-                personId ? `/campus/api/portal/assignment/recentlyScoredTotal${buildQuery({ personID: personId })}` : '',
+                personId ? `/campus/api/portal/assignment/missing${buildQuery({ personID: personId, termID: term })}` : '',
+                personId ? `/campus/api/portal/assignment/missingAssignments${buildQuery({ personID: personId, termID: term })}` : '',
+                personId ? `/campus/resources/portal/assignment/missing${buildQuery({ personID: personId, termID: term })}` : '',
+                // Fall back to the general assignment list with all assignments
+                personId ? `/campus/api/portal/assignment/byDateRange${buildQuery({ personID: personId, startDate: '2024-08-01T00:00:00', endDate: `${today}T23:59:59` })}` : '',
+                personId ? `/campus/api/portal/assignment/recentlyScored${buildQuery({ personID: personId })}` : '',
                 ...this.buildApiPaths([
                     `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
                     `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
@@ -462,9 +467,10 @@ class InfiniteCampusClient {
         }
         else {
             paths = dedupeStrings([
-                personId ? `/campus/api/portal/assignment/byDateRangeTotal${buildQuery({ personID: personId, startDate: `${today}T00:00:00`, endDate: `${today}T00:00:00` })}` : '',
-                personId ? `/campus/api/portal/assignment/recentlyScoredTotal${buildQuery({ personID: personId })}` : '',
-                personId ? `/campus/api/portal/assignment/missingTotal${buildQuery({ personID: personId, termID: term })}` : '',
+                personId ? `/campus/api/portal/assignment/byDateRange${buildQuery({ personID: personId, startDate: '2024-08-01T00:00:00', endDate: `${today}T23:59:59` })}` : '',
+                personId ? `/campus/api/portal/assignment/recentlyScored${buildQuery({ personID: personId })}` : '',
+                personId ? `/campus/api/portal/assignment/missing${buildQuery({ personID: personId, termID: term })}` : '',
+                personId ? `/campus/api/portal/assignment/missingAssignments${buildQuery({ personID: personId, termID: term })}` : '',
                 ...this.buildApiPaths([
                     `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
                     `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
@@ -476,7 +482,11 @@ class InfiniteCampusClient {
             if (!payload) {
                 continue;
             }
-            const rows = this.findBestObjectArray(payload, (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className']));
+            // Skip responses that are just a number (count endpoints like *Total)
+            if (typeof payload === 'number' || (typeof payload === 'string' && /^\d+$/.test(payload.trim()))) {
+                continue;
+            }
+            const rows = this.findBestObjectArray(payload, (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className', 'sectionName']));
             let assignments = rows.map((row) => this.normalizeAssignment(row, 'api')).filter(Boolean);
             // When filtering for missing, post-filter results from non-missing endpoints
             if (filter === 'missing' && assignments.length > 0) {
@@ -501,7 +511,7 @@ class InfiniteCampusClient {
             if (!html) {
                 continue;
             }
-            const rows = this.findBestObjectArray(extractJsonBlobsFromHtml(html), (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className']));
+            const rows = this.findBestObjectArray(extractJsonBlobsFromHtml(html), (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className', 'sectionName']));
             const assignments = rows.map((row) => this.normalizeAssignment(row, 'scrape')).filter(Boolean);
             if (assignments.length > 0) {
                 return assignments;
@@ -511,6 +521,11 @@ class InfiniteCampusClient {
                 .filter(Boolean);
             if (selectorAssignments.length > 0) {
                 return selectorAssignments;
+            }
+            // Try parsing assignment rows with status badges (Missing/Late tags)
+            const badgeAssignments = extractAssignmentRowsWithBadges(html);
+            if (badgeAssignments.length > 0) {
+                return badgeAssignments;
             }
             const regexAssignments = [...html.matchAll(/data-course-name=["']([^"']+)["'][^>]*data-assignment-title=["']([^"']+)["'][^>]*data-score=["']([^"']*)["']/gi)]
                 .map((match) => ({ courseName: match[1], title: match[2], score: match[3] }))
@@ -1148,6 +1163,79 @@ function getPrimaryEnrollment(raw) {
         calendarName: pickFirstString(enrollment, ['calendarName']),
         structureName: pickFirstString(enrollment, ['structureName']),
     };
+}
+/**
+ * Extract assignment rows from IC portal HTML that use status badges (Missing/Late/etc).
+ * IC portals render assignment lists with various structures — this catches rows that have
+ * both a course/class identifier and an assignment name, optionally with a status badge.
+ */
+function extractAssignmentRowsWithBadges(html) {
+    const assignments = [];
+    // Pattern 1: Table/list rows with class="missing" or text "Missing" near assignment info
+    // Matches structures like: <tr>...<td>Course Name</td>...<td>Assignment Title</td>...<span>Missing</span>...</tr>
+    const rowPattern = /<tr[^>]*>([\s\S]*?)<\/tr>/gi;
+    for (const rowMatch of html.matchAll(rowPattern)) {
+        const row = rowMatch[1];
+        // Look for cells/spans that indicate this row has assignment data
+        const cells = [...row.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/gi)].map((m) => cleanHtmlText(m[1]) ?? '');
+        if (cells.length < 2) {
+            continue;
+        }
+        // Check for missing/late badge in the row
+        const hasMissing = /\bmissing\b/i.test(row);
+        const hasLate = /\blate\b/i.test(row);
+        if (!hasMissing && !hasLate) {
+            continue;
+        }
+        // Try to identify course and assignment from cell content
+        // Heuristic: the longer cell content is likely the assignment title, shorter is course
+        const nonEmptyCells = cells.filter((c) => c.length > 0);
+        if (nonEmptyCells.length < 2) {
+            continue;
+        }
+        // Look for a date-like cell to use as due date
+        const dateCell = nonEmptyCells.find((c) => /\d{1,2}\/\d{1,2}\/\d{2,4}|\d{4}-\d{2}-\d{2}/.test(c));
+        const contentCells = nonEmptyCells.filter((c) => c !== dateCell && !/^\d+(\.\d+)?$/.test(c));
+        if (contentCells.length >= 2) {
+            assignments.push({
+                courseName: contentCells[0],
+                title: contentCells[1],
+                dueDate: dateCell ? normalizeDate(dateCell) : undefined,
+                isMissing: hasMissing,
+                isLate: hasLate,
+                source: 'scrape',
+                raw: { cells, html: rowMatch[0].slice(0, 500) },
+            });
+        }
+    }
+    // Pattern 2: IC Campus portal card/tile layout with assignment-flag badges
+    // <div class="assignment-row">...<span class="assignment-flag--missing">Missing</span>...
+    const cardPattern = /<(?:div|li)[^>]*class="[^"]*assignment[^"]*"[^>]*>([\s\S]*?)<\/(?:div|li)>/gi;
+    for (const cardMatch of html.matchAll(cardPattern)) {
+        const card = cardMatch[1];
+        const hasMissing = /\bmissing\b/i.test(card);
+        const hasLate = /\blate\b/i.test(card);
+        if (!hasMissing && !hasLate) {
+            continue;
+        }
+        const titleMatch = card.match(/<[^>]*class="[^"]*(?:assignment[_-]?(?:name|title)|title)[^"]*"[^>]*>([\s\S]*?)<\//i);
+        const courseMatch = card.match(/<[^>]*class="[^"]*(?:course[_-]?name|section[_-]?name|class[_-]?name)[^"]*"[^>]*>([\s\S]*?)<\//i);
+        const dateMatch = card.match(/(?:due|date)[^>]*>([\s\S]*?)<\//i);
+        const title = cleanHtmlText(titleMatch?.[1]);
+        const courseName = cleanHtmlText(courseMatch?.[1]);
+        if (title && courseName) {
+            assignments.push({
+                courseName,
+                title,
+                dueDate: dateMatch ? normalizeDate(cleanHtmlText(dateMatch[1]) ?? '') : undefined,
+                isMissing: hasMissing,
+                isLate: hasLate,
+                source: 'scrape',
+                raw: { html: cardMatch[0].slice(0, 500) },
+            });
+        }
+    }
+    return assignments;
 }
 function extractPortalNotifications(html) {
     return [...html.matchAll(/<div[^>]*class="notification__text__container"[^>]*>[\s\S]*?<a[^>]*class="[^"]*notification__text[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*class="[^"]*notification__date[^"]*"[^>]*>([\s\S]*?)<\/p>)?[\s\S]*?<\/div>/gi)]

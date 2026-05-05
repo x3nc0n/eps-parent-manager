@@ -7,14 +7,19 @@ import type {
   CanvasCalendarEvent,
   CanvasCourse,
   CanvasCourseSummary,
+  CanvasEnrollment,
   CanvasGradeSummary,
   CanvasHealthCheck,
   CanvasId,
+  CanvasMissingSubmission,
+  CanvasMissingSubmissionResponse,
+  CanvasModule,
+  CanvasModuleItem,
   CanvasSubmission,
   CanvasSubmissionStatus,
+  CanvasSyllabus,
   CanvasUpcomingItem,
   CanvasUser,
-  CanvasEnrollment,
 } from "./types.js";
 
 const DEFAULT_PAGE_SIZE = 100;
@@ -207,6 +212,45 @@ export class CanvasClient {
     return assignments.map((assignment) => this.toAssignmentSummary(assignment, courseId));
   }
 
+  async getAllAssignments(observedUserId?: string): Promise<CanvasAssignmentSummary[]> {
+    const userId = await this.resolveObservedUserId(observedUserId);
+    const courses = (await this.getCourses(userId)).filter((course) => course.workflowState === "available");
+    const assignmentsByCourse = await Promise.all(
+      courses.map(async (course) => {
+        const assignments = await this.getAssignments(course.id, { observedUserId: userId });
+        return assignments.map((assignment) => ({
+          ...assignment,
+          courseName: course.name,
+        }));
+      }),
+    );
+
+    return assignmentsByCourse.flat();
+  }
+
+  async getMissingSubmissions(observedUserId?: string): Promise<CanvasMissingSubmission[]> {
+    const userId = await this.resolveObservedUserId(observedUserId);
+    const submissions = await this.paginate<CanvasMissingSubmissionResponse>(
+      `users/${encodeURIComponent(userId)}/missing_submissions`,
+      {
+        "include[]": ["planner_overrides", "course"],
+        "filter[]": "submittable",
+        per_page: DEFAULT_PAGE_SIZE,
+      },
+    );
+
+    return submissions.map((submission) => ({
+      id: submission.id,
+      name: submission.name,
+      course_id: submission.course_id ?? submission.course?.id ?? "",
+      course_name: submission.course?.name ?? "",
+      due_at: submission.due_at,
+      points_possible: submission.points_possible,
+      html_url: submission.html_url,
+      planner_override: submission.planner_override,
+    }));
+  }
+
   async getUpcoming(options: GetUpcomingOptions = {}): Promise<CanvasUpcomingItem[]> {
     const days = clampDays(options.days);
     const userId = await this.resolveObservedUserId(options.observedUserId);
@@ -296,6 +340,45 @@ export class CanvasClient {
     );
 
     return data;
+  }
+
+  async getSyllabus(courseId: string, observedUserId?: string): Promise<CanvasSyllabus> {
+    await this.resolveObservedUserId(observedUserId);
+    const { data } = await this.requestJson<CanvasCourse>(`courses/${encodeURIComponent(courseId)}`, {
+      "include[]": "syllabus_body",
+    });
+
+    return {
+      courseId: data.id,
+      courseName: data.name,
+      syllabusBody: data.syllabus_body,
+    };
+  }
+
+  async getModules(courseId: string, observedUserId?: string): Promise<CanvasModule[]> {
+    const userId = await this.resolveObservedUserId(observedUserId);
+    const modules = await this.paginate<CanvasModule>(`courses/${encodeURIComponent(courseId)}/modules`, {
+      "include[]": "items",
+      student_id: userId,
+      per_page: DEFAULT_PAGE_SIZE,
+    });
+
+    return modules.map((module) => ({
+      id: module.id,
+      name: module.name,
+      position: module.position,
+      state: module.state,
+      items_count: module.items_count ?? module.items.length,
+      items: module.items.map((item): CanvasModuleItem => ({
+        id: item.id,
+        title: item.title,
+        type: item.type,
+        position: item.position,
+        html_url: item.html_url,
+        completion_requirement: item.completion_requirement,
+        completed: item.completed,
+      })),
+    }));
   }
 
   async getCalendar(options: GetCalendarOptions = {}): Promise<CanvasCalendarEvent[]> {

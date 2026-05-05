@@ -1,4 +1,4 @@
-import type { CanvasAnnouncement, CanvasAssignmentSummary, CanvasCalendarEvent, CanvasCourseSummary, CanvasGradeSummary, CanvasHealthCheck, CanvasSubmission, CanvasUpcomingItem, CanvasUser } from "./types.js";
+import type { CanvasAnnouncement, CanvasAssignmentSummary, CanvasCalendarEvent, CanvasCourseSummary, CanvasGradeSummary, CanvasHealthCheck, CanvasMissingSubmission, CanvasModule, CanvasSubmission, CanvasSyllabus, CanvasUpcomingItem, CanvasUser } from "./types.js";
 export interface CanvasClientOptions {
     baseUrl: string;
     apiToken: string;
@@ -48,9 +48,13 @@ export declare class CanvasClient {
     resolveObservedUserId(observedUserId?: string): Promise<string>;
     getCourses(observedUserId?: string): Promise<CanvasCourseSummary[]>;
     getAssignments(courseId: string, options?: GetAssignmentsOptions): Promise<CanvasAssignmentSummary[]>;
+    getAllAssignments(observedUserId?: string): Promise<CanvasAssignmentSummary[]>;
+    getMissingSubmissions(observedUserId?: string): Promise<CanvasMissingSubmission[]>;
     getUpcoming(options?: GetUpcomingOptions): Promise<CanvasUpcomingItem[]>;
     getGrades(observedUserId?: string): Promise<CanvasGradeSummary[]>;
     getSubmissions(courseId: string, assignmentId: string, observedUserId?: string): Promise<CanvasSubmission>;
+    getSyllabus(courseId: string, observedUserId?: string): Promise<CanvasSyllabus>;
+    getModules(courseId: string, observedUserId?: string): Promise<CanvasModule[]>;
     getCalendar(options?: GetCalendarOptions): Promise<CanvasCalendarEvent[]>;
     getAnnouncements(options?: GetAnnouncementsOptions): Promise<CanvasAnnouncement[]>;
     private getEnrollment;

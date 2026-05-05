@@ -61,6 +61,32 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
+    "get_all_assignments",
+    {
+      title: "Get All Assignments",
+      description: "Fetch assignments across all active Canvas courses for the observed student.",
+      inputSchema: observedUserSchema,
+    },
+    async ({ observedUserId }) => runTool(async () => {
+      const assignments = await CanvasClient.fromEnv().getAllAssignments(observedUserId);
+      return successResult(`Found ${assignments.length} assignment(s) across active Canvas courses.`, { assignments });
+    }),
+  );
+
+  server.registerTool(
+    "get_missing_submissions",
+    {
+      title: "Get Missing Submissions",
+      description: "Fetch missing submittable Canvas assignments, including course context and planner overrides.",
+      inputSchema: observedUserSchema,
+    },
+    async ({ observedUserId }) => runTool(async () => {
+      const missingSubmissions = await CanvasClient.fromEnv().getMissingSubmissions(observedUserId);
+      return successResult(`Found ${missingSubmissions.length} missing submission(s).`, { missingSubmissions });
+    }),
+  );
+
+  server.registerTool(
     "get_upcoming",
     {
       title: "Get Upcoming Work",
@@ -101,6 +127,36 @@ export function createServer(): McpServer {
     async ({ courseId, assignmentId, observedUserId }) => runTool(async () => {
       const submission = await CanvasClient.fromEnv().getSubmissions(courseId, assignmentId, observedUserId);
       return successResult(`Fetched submission details for assignment ${assignmentId}.`, { submission });
+    }),
+  );
+
+  server.registerTool(
+    "get_syllabus",
+    {
+      title: "Get Course Syllabus",
+      description: "Fetch a Canvas course syllabus body for the observed student's class.",
+      inputSchema: observedUserSchema.extend({
+        courseId: z.string().min(1),
+      }),
+    },
+    async ({ courseId, observedUserId }) => runTool(async () => {
+      const syllabus = await CanvasClient.fromEnv().getSyllabus(courseId, observedUserId);
+      return successResult(`Fetched syllabus for course ${courseId}.`, { syllabus });
+    }),
+  );
+
+  server.registerTool(
+    "get_modules",
+    {
+      title: "Get Course Modules",
+      description: "Fetch Canvas course modules and module items for the observed student.",
+      inputSchema: observedUserSchema.extend({
+        courseId: z.string().min(1),
+      }),
+    },
+    async ({ courseId, observedUserId }) => runTool(async () => {
+      const modules = await CanvasClient.fromEnv().getModules(courseId, observedUserId);
+      return successResult(`Found ${modules.length} module(s) for course ${courseId}.`, { modules });
     }),
   );
 

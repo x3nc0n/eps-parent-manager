@@ -54,6 +54,7 @@ export interface CanvasCourse {
     end_at?: string | null;
     public_description?: string | null;
     default_view?: string | null;
+    syllabus_body?: string | null;
     term?: CanvasTerm | null;
     teachers?: CanvasTeacher[];
     enrollments?: CanvasEnrollment[];
@@ -141,6 +142,7 @@ export interface CanvasCourseSummary {
 export interface CanvasAssignmentSummary {
     id: CanvasId;
     courseId: CanvasId;
+    courseName?: string | null;
     name: string;
     description?: string | null;
     dueAt?: string | null;
@@ -159,6 +161,56 @@ export interface CanvasAssignmentSummary {
     late?: boolean;
     missing?: boolean;
     excused?: boolean;
+}
+export interface CanvasPlannerOverride {
+    id?: CanvasId;
+    plannable_id?: CanvasId | null;
+    plannable_type?: string | null;
+    marked_complete?: boolean | null;
+    dismissed?: boolean | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+}
+export interface CanvasMissingSubmissionResponse extends CanvasAssignment {
+    course?: Pick<CanvasCourse, "id" | "name"> | null;
+    planner_override?: CanvasPlannerOverride | null;
+}
+export interface CanvasMissingSubmission {
+    id: CanvasId;
+    name: string;
+    course_id: CanvasId;
+    course_name: string;
+    due_at?: string | null;
+    points_possible?: number | null;
+    html_url?: string | null;
+    planner_override?: CanvasPlannerOverride | null;
+}
+export interface CanvasSyllabus {
+    courseId: CanvasId;
+    courseName: string;
+    syllabusBody?: string | null;
+}
+export interface CanvasModuleItemCompletionRequirement {
+    type?: string | null;
+    min_score?: number | null;
+    completed?: boolean | null;
+}
+export interface CanvasModuleItem {
+    id: CanvasId;
+    title: string;
+    type?: string | null;
+    position?: number | null;
+    html_url?: string | null;
+    completion_requirement?: CanvasModuleItemCompletionRequirement | null;
+    completed?: boolean | null;
+}
+export interface CanvasModule {
+    id: CanvasId;
+    name: string;
+    position?: number | null;
+    state?: string | null;
+    items_count?: number;
+    items: CanvasModuleItem[];
 }
 export interface CanvasGradeSummary {
     courseId: CanvasId;
