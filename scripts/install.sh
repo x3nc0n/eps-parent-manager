@@ -44,15 +44,35 @@ else
   IS_GIT_REPO=false
 fi
 
+# Auto-detect upgrade: if .eps-toolkit-version exists, inject --update
+VERSION_FILE=".eps-toolkit-version"
+if [[ -f "$TARGET_DIR/$VERSION_FILE" ]]; then
+  IS_UPGRADE=true
+  # Ensure --update is in the args passed to setup.sh
+  HAS_UPDATE=false
+  for arg in "${ARGS[@]+"${ARGS[@]}"}"; do
+    [[ "$arg" == "--update" ]] && HAS_UPDATE=true
+  done
+  if ! $HAS_UPDATE; then
+    ARGS+=("--update")
+  fi
+else
+  IS_UPGRADE=false
+fi
+
 ARCHIVE_PATH="$PWD/.${REPO_NAME}-${BRANCH}.tar.gz"
 TARBALL_URL="https://github.com/$REPO_OWNER/$REPO_NAME/archive/refs/heads/$BRANCH.tar.gz"
 
-# Only check for non-empty target if we're creating a new subdirectory
-if [[ "$IS_GIT_REPO" == "false" ]] && [[ -e "$TARGET_DIR" && -n "$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
-  fail "Target directory '$TARGET_DIR' already exists and is not empty. Choose a new folder and rerun the installer."
+# Only check for non-empty target if we're creating a new subdirectory (not an upgrade)
+if [[ "$IS_GIT_REPO" == "false" ]] && ! $IS_UPGRADE && [[ -e "$TARGET_DIR" && -n "$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
+  fail "Target directory '$TARGET_DIR' already exists and is not empty. Use --update to upgrade, or choose a new folder."
 fi
 
-info "Preparing $TARGET_DIR from branch '$BRANCH'"
+if $IS_UPGRADE; then
+  info "Upgrading $TARGET_DIR from branch '$BRANCH'"
+else
+  info "Preparing $TARGET_DIR from branch '$BRANCH'"
+fi
 if $DRY_RUN; then
   info "Would download $TARBALL_URL"
   info "Would extract into $TARGET_DIR and run scripts/setup.sh ${ARGS[*]+"${ARGS[*]}"}"
