@@ -245,9 +245,9 @@ export class InfiniteCampusClient {
     );
   }
 
-  public async getAssignments(selector: StudentSelector & { term?: string } = {}): Promise<AssignmentsSnapshot> {
+  public async getAssignments(selector: StudentSelector & { term?: string; filter?: 'all' | 'missing' } = {}): Promise<AssignmentsSnapshot> {
     const student = await this.resolveStudent(selector, false);
-    const apiAssignments = await this.fetchAssignmentsFromApi(student, selector.term);
+    const apiAssignments = await this.fetchAssignmentsFromApi(student, selector.term, selector.filter);
 
     if (apiAssignments.length > 0) {
       const snapshot: AssignmentsSnapshot = {
@@ -260,11 +260,15 @@ export class InfiniteCampusClient {
     }
 
     const scrapedAssignments = await this.fetchAssignmentsFromPages(student, selector.term);
-    if (scrapedAssignments.length > 0) {
+    const filteredScraped = selector.filter === 'missing'
+      ? scrapedAssignments.filter((a) => a.isMissing === true)
+      : scrapedAssignments;
+
+    if (filteredScraped.length > 0) {
       const snapshot: AssignmentsSnapshot = {
         student,
         term: selector.term,
-        assignments: scrapedAssignments,
+        assignments: filteredScraped,
         source: 'scrape',
       };
       return this.streamerMode ? maskAssignmentsSnapshot(snapshot) : snapshot;
@@ -578,18 +582,33 @@ export class InfiniteCampusClient {
     return [];
   }
 
-  private async fetchAssignmentsFromApi(student: StudentProfile, term?: string): Promise<AssignmentRecord[]> {
+  private async fetchAssignmentsFromApi(student: StudentProfile, term?: string, filter?: 'all' | 'missing'): Promise<AssignmentRecord[]> {
     const personId = this.getStudentPersonId(student);
     const today = new Date().toISOString().slice(0, 10);
-    const paths = dedupeStrings([
-      personId ? `/campus/api/portal/assignment/byDateRangeTotal${buildQuery({ personID: personId, startDate: `${today}T00:00:00`, endDate: `${today}T00:00:00` })}` : '',
-      personId ? `/campus/api/portal/assignment/recentlyScoredTotal${buildQuery({ personID: personId })}` : '',
-      personId ? `/campus/api/portal/assignment/missingTotal${buildQuery({ personID: personId, termID: term })}` : '',
-      ...this.buildApiPaths([
-        `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
-        `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
-      ]),
-    ]);
+
+    let paths: string[];
+    if (filter === 'missing') {
+      // When filtering for missing assignments, prioritize the missingTotal endpoint
+      paths = dedupeStrings([
+        personId ? `/campus/api/portal/assignment/missingTotal${buildQuery({ personID: personId, termID: term })}` : '',
+        personId ? `/campus/api/portal/assignment/byDateRangeTotal${buildQuery({ personID: personId, startDate: `${today}T00:00:00`, endDate: `${today}T00:00:00` })}` : '',
+        personId ? `/campus/api/portal/assignment/recentlyScoredTotal${buildQuery({ personID: personId })}` : '',
+        ...this.buildApiPaths([
+          `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
+          `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
+        ]),
+      ]);
+    } else {
+      paths = dedupeStrings([
+        personId ? `/campus/api/portal/assignment/byDateRangeTotal${buildQuery({ personID: personId, startDate: `${today}T00:00:00`, endDate: `${today}T00:00:00` })}` : '',
+        personId ? `/campus/api/portal/assignment/recentlyScoredTotal${buildQuery({ personID: personId })}` : '',
+        personId ? `/campus/api/portal/assignment/missingTotal${buildQuery({ personID: personId, termID: term })}` : '',
+        ...this.buildApiPaths([
+          `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
+          `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
+        ]),
+      ]);
+    }
 
     for (const path of paths) {
       const payload = await this.fetchJson(path);
@@ -598,7 +617,18 @@ export class InfiniteCampusClient {
       }
 
       const rows = this.findBestObjectArray(payload, (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className']));
-      const assignments = rows.map((row) => this.normalizeAssignment(row, 'api')).filter(Boolean) as AssignmentRecord[];
+      let assignments = rows.map((row) => this.normalizeAssignment(row, 'api')).filter(Boolean) as AssignmentRecord[];
+
+      // When filtering for missing, post-filter results from non-missing endpoints
+      if (filter === 'missing' && assignments.length > 0) {
+        const missingOnly = assignments.filter((a) => a.isMissing === true);
+        if (missingOnly.length > 0) {
+          return missingOnly;
+        }
+        // If this endpoint returned data but none are marked missing, try next endpoint
+        continue;
+      }
+
       if (assignments.length > 0) {
         return assignments;
       }
