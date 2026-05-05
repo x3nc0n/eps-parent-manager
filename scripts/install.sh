@@ -35,25 +35,38 @@ done
 command_exists curl || fail "curl is required to download the toolkit."
 command_exists tar || fail "tar is required to unpack the toolkit."
 
-TARGET_DIR="$REPO_NAME"
+# Check if running inside an already-initialized git repo
+if [[ -d ".git" ]]; then
+  TARGET_DIR="."
+  IS_GIT_REPO=true
+else
+  TARGET_DIR="$REPO_NAME"
+  IS_GIT_REPO=false
+fi
+
 ARCHIVE_PATH="$PWD/.${REPO_NAME}-${BRANCH}.tar.gz"
 TARBALL_URL="https://github.com/$REPO_OWNER/$REPO_NAME/archive/refs/heads/$BRANCH.tar.gz"
 
-if [[ -e "$TARGET_DIR" && -n "$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
+# Only check for non-empty target if we're creating a new subdirectory
+if [[ "$IS_GIT_REPO" == "false" ]] && [[ -e "$TARGET_DIR" && -n "$(find "$TARGET_DIR" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]]; then
   fail "Target directory '$TARGET_DIR' already exists and is not empty. Choose a new folder and rerun the installer."
 fi
 
 info "Preparing $TARGET_DIR from branch '$BRANCH'"
 if $DRY_RUN; then
   info "Would download $TARBALL_URL"
-  info "Would extract into $TARGET_DIR and run scripts/setup.sh ${ARGS[*]}"
+  info "Would extract into $TARGET_DIR and run scripts/setup.sh ${ARGS[*]+"${ARGS[*]}"}"
   exit 0
 fi
 
-mkdir -p "$TARGET_DIR"
+if [[ "$IS_GIT_REPO" == "false" ]]; then
+  mkdir -p "$TARGET_DIR"
+fi
 trap 'rm -f "$ARCHIVE_PATH"' EXIT
 curl -fsSL "$TARBALL_URL" -o "$ARCHIVE_PATH"
 tar -xzf "$ARCHIVE_PATH" -C "$TARGET_DIR" --strip-components=1
 chmod +x "$TARGET_DIR/scripts/setup.sh"
-cd "$TARGET_DIR"
-./scripts/setup.sh "${ARGS[@]}"
+if [[ "$IS_GIT_REPO" == "false" ]]; then
+  cd "$TARGET_DIR"
+fi
+./scripts/setup.sh ${ARGS[@]+"${ARGS[@]}"}

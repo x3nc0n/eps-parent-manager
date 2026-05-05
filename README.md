@@ -7,12 +7,16 @@ EPS Parent Manager is a parent-owned toolkit for syncing school systems into a l
 ### macOS / Linux
 
 ```bash
+mkdir my-family-toolkit && cd my-family-toolkit
+git init
 curl -fsSL https://raw.githubusercontent.com/x3nc0n/eps-parent-manager/main/scripts/install.sh | bash
 ```
 
 ### Windows PowerShell
 
 ```powershell
+mkdir my-family-toolkit; cd my-family-toolkit
+git init
 irm https://raw.githubusercontent.com/x3nc0n/eps-parent-manager/main/scripts/install.ps1 | iex
 ```
 
