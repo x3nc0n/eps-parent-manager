@@ -185,15 +185,34 @@ class InfiniteCampusClient {
             };
             return this.streamerMode ? (0, streamer_mode_1.maskAssignmentsSnapshot)(snapshot) : snapshot;
         }
+        // If filter=missing returned nothing from API, try getting ALL assignments
+        // so the caller can reconcile externally (e.g., against Canvas)
+        if (selector.filter === 'missing') {
+            const allApiAssignments = await this.fetchAssignmentsFromApi(student, selector.term, 'all');
+            if (allApiAssignments.length > 0) {
+                const snapshot = {
+                    student,
+                    term: selector.term,
+                    assignments: allApiAssignments,
+                    source: 'api',
+                };
+                return this.streamerMode ? (0, streamer_mode_1.maskAssignmentsSnapshot)(snapshot) : snapshot;
+            }
+        }
         const scrapedAssignments = await this.fetchAssignmentsFromPages(student, selector.term);
         const filteredScraped = selector.filter === 'missing'
             ? scrapedAssignments.filter((a) => a.isMissing === true)
             : scrapedAssignments;
-        if (filteredScraped.length > 0) {
+        // If filtering for missing found nothing, return all scraped assignments
+        // so the caller has the full picture for reconciliation
+        const resultAssignments = (selector.filter === 'missing' && filteredScraped.length === 0)
+            ? scrapedAssignments
+            : filteredScraped;
+        if (resultAssignments.length > 0) {
             const snapshot = {
                 student,
                 term: selector.term,
-                assignments: filteredScraped,
+                assignments: resultAssignments,
                 source: 'scrape',
             };
             return this.streamerMode ? (0, streamer_mode_1.maskAssignmentsSnapshot)(snapshot) : snapshot;
@@ -447,57 +466,35 @@ class InfiniteCampusClient {
     async fetchAssignmentsFromApi(student, term, filter) {
         const personId = this.getStudentPersonId(student);
         const today = new Date().toISOString().slice(0, 10);
-        // The *Total endpoints (missingTotal, byDateRangeTotal, recentlyScoredTotal)
-        // return only counts (numbers), not assignment objects. We need the detail endpoints.
-        let paths;
-        if (filter === 'missing') {
-            // Prioritize missing-specific detail endpoints
-            paths = dedupeStrings([
-                personId ? `/campus/api/portal/assignment/missing${buildQuery({ personID: personId, termID: term })}` : '',
-                personId ? `/campus/api/portal/assignment/missingAssignments${buildQuery({ personID: personId, termID: term })}` : '',
-                personId ? `/campus/resources/portal/assignment/missing${buildQuery({ personID: personId, termID: term })}` : '',
-                // Fall back to the general assignment list with all assignments
-                personId ? `/campus/api/portal/assignment/byDateRange${buildQuery({ personID: personId, startDate: '2024-08-01T00:00:00', endDate: `${today}T23:59:59` })}` : '',
-                personId ? `/campus/api/portal/assignment/recentlyScored${buildQuery({ personID: personId })}` : '',
-                ...this.buildApiPaths([
-                    `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
-                    `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
-                ]),
-            ]);
-        }
-        else {
-            paths = dedupeStrings([
-                personId ? `/campus/api/portal/assignment/byDateRange${buildQuery({ personID: personId, startDate: '2024-08-01T00:00:00', endDate: `${today}T23:59:59` })}` : '',
-                personId ? `/campus/api/portal/assignment/recentlyScored${buildQuery({ personID: personId })}` : '',
-                personId ? `/campus/api/portal/assignment/missing${buildQuery({ personID: personId, termID: term })}` : '',
-                personId ? `/campus/api/portal/assignment/missingAssignments${buildQuery({ personID: personId, termID: term })}` : '',
-                ...this.buildApiPaths([
-                    `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
-                    `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
-                ]),
-            ]);
-        }
+        // IC's /assignment/missing*, /assignment/*Total, /assignment/byDateRangeTotal, etc.
+        // all return only counts (numbers), not assignment objects.
+        // The actual assignment data comes from the generic assignment list endpoints
+        // or from the grades detail view. We try those and post-filter for missing if needed.
+        const paths = dedupeStrings([
+            ...this.buildApiPaths([
+                `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
+                `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
+            ]),
+            // Some IC portals expose assignment data through the grades detail endpoint
+            personId ? `/campus/resources/portal/grades${buildQuery({ personID: personId, term })}` : '',
+            personId ? `/campus/api/portal/grades${buildQuery({ personID: personId, term })}` : '',
+        ]);
         for (const path of paths) {
             const payload = await this.fetchJson(path);
             if (!payload) {
                 continue;
             }
-            // Skip responses that are just a number (count endpoints like *Total)
+            // Skip responses that are just a number (count-only endpoints)
             if (typeof payload === 'number' || (typeof payload === 'string' && /^\d+$/.test(payload.trim()))) {
                 continue;
             }
             const rows = this.findBestObjectArray(payload, (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className', 'sectionName']));
             let assignments = rows.map((row) => this.normalizeAssignment(row, 'api')).filter(Boolean);
-            // When filtering for missing, post-filter results from non-missing endpoints
-            if (filter === 'missing' && assignments.length > 0) {
-                const missingOnly = assignments.filter((a) => a.isMissing === true);
-                if (missingOnly.length > 0) {
+            if (assignments.length > 0) {
+                if (filter === 'missing') {
+                    const missingOnly = assignments.filter((a) => a.isMissing === true);
                     return missingOnly;
                 }
-                // If this endpoint returned data but none are marked missing, try next endpoint
-                continue;
-            }
-            if (assignments.length > 0) {
                 return assignments;
             }
         }
