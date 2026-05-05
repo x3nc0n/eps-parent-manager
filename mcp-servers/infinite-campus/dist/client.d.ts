@@ -10,6 +10,7 @@ export declare class InfiniteCampusClient {
     private readonly cookies;
     private lastAuthenticatedAt?;
     private loginPromise?;
+    private readonly streamerMode;
     constructor(config: InfiniteCampusConfig);
     static fromEnv(env?: NodeJS.ProcessEnv): InfiniteCampusClient;
     healthCheck(): Promise<HealthCheckResult>;
@@ -59,6 +60,9 @@ export declare class InfiniteCampusClient {
     private buildPortalPaths;
     private buildLoginPageCandidates;
     private buildLoginPostCandidates;
+    private buildHomePageCandidates;
+    private getStudentPersonId;
+    private getPrimaryEnrollmentId;
     private findBestObjectArray;
     private normalizeStudent;
     private normalizeGrade;

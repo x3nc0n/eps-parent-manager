@@ -14,7 +14,9 @@ This pattern applies when a school system portal has district-specific routes, s
 - Default to headed mode so a human can handle MFA, CAPTCHAs, or redirect weirdness while the script keeps capturing traffic.
 - Load credentials from `.env` with documented optional route overrides in `.env.example`; never hardcode secrets.
 - Save rendered HTML per page plus a consolidated network log and student-detection summary in a gitignored capture directory.
+- Start endpoint analysis with the small per-page JSON files and `summary.json`; only grep the full network log for a specific path or parameter once the smaller artifacts narrow the question.
 - Treat 403s and missing pages as data points: log them, save the page state, and continue to the next target.
+- When a detail page 404s, inspect the home/dashboard notifications for real selector anchors and background XHR routes before guessing a replacement page path.
 
 ## Examples
 - `scripts/ic-discover.ts` logs into Infinite Campus, walks home/grades/attendance/schedule/assignments, and writes captures into `scripts/ic-captures/`.

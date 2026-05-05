@@ -12,6 +12,8 @@ export interface InfiniteCampusConfig {
   defaultStudentId?: string;
   defaultStudentName?: string;
   sessionTtlMs: number;
+  /** When true, all returned data is masked for safe use during livestreams or demos. */
+  streamerMode?: boolean;
 }
 
 export interface StudentSelector {

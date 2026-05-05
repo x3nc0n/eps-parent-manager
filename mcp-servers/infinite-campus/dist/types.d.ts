@@ -6,9 +6,13 @@ export interface InfiniteCampusConfig {
     loginPath?: string;
     loginPagePath?: string;
     apiBasePath?: string;
+    appName?: string;
+    portalLoginPage?: string;
     defaultStudentId?: string;
     defaultStudentName?: string;
     sessionTtlMs: number;
+    /** When true, all returned data is masked for safe use during livestreams or demos. */
+    streamerMode?: boolean;
 }
 export interface StudentSelector {
     studentId?: string;

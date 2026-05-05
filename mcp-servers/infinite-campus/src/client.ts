@@ -16,6 +16,15 @@ import {
   StudentProfile,
   StudentSelector,
 } from './types';
+import {
+  isStreamerModeEnabled,
+  maskAttendanceSnapshot,
+  maskAssignmentsSnapshot,
+  maskGradesSnapshot,
+  maskReportCardSnapshot,
+  maskScheduleSnapshot,
+  maskStudentProfile,
+} from './streamer-mode';
 
 const DEFAULT_SESSION_TTL_MS = 25 * 60 * 1000;
 const USER_AGENT = 'eps-parent-manager-infinite-campus-mcp/0.1.0';
@@ -27,13 +36,14 @@ const DEFAULT_LOGIN_PAGE_CANDIDATES = [
 ];
 
 const DEFAULT_LOGIN_POST_CANDIDATES = [
+  '/campus/verify.jsp',
   '/campus/portal/parents',
   '/campus/portal/students',
   '/campus/login',
-  '/campus/verify.jsp',
 ];
 
-const DEFAULT_API_BASE_CANDIDATES = ['/campus/resources/portal', '/api/portal'];
+const DEFAULT_API_BASE_CANDIDATES = ['/campus/api/portal', '/campus/resources/portal', '/api/portal'];
+const DEFAULT_HOME_PAGE_CANDIDATES = ['/campus/nav-wrapper/parent/portal/parent/home', '/campus/nav-wrapper/parent/portal/parent'];
 
 export class InfiniteCampusError extends Error {
   public readonly userMessage: string;
@@ -50,12 +60,14 @@ export class InfiniteCampusClient {
   private readonly cookies = new Map<string, string>();
   private lastAuthenticatedAt?: number;
   private loginPromise?: Promise<void>;
+  private readonly streamerMode: boolean;
 
   public constructor(config: InfiniteCampusConfig) {
     this.config = {
       ...config,
       baseUrl: stripTrailingSlash(config.baseUrl),
     };
+    this.streamerMode = config.streamerMode ?? false;
   }
 
   public static fromEnv(env: NodeJS.ProcessEnv = process.env): InfiniteCampusClient {
@@ -70,6 +82,8 @@ export class InfiniteCampusClient {
       );
     }
 
+    const inferredAppName = env.IC_APP_NAME?.trim() || inferAppNameFromBaseUrl(baseUrl);
+
     return new InfiniteCampusClient({
       baseUrl,
       username,
@@ -77,11 +91,12 @@ export class InfiniteCampusClient {
       loginPath: env.IC_LOGIN_PATH?.trim(),
       loginPagePath: env.IC_LOGIN_PAGE_PATH?.trim(),
       apiBasePath: env.IC_API_BASE_PATH?.trim(),
-      appName: env.IC_APP_NAME?.trim(),
-      portalLoginPage: env.IC_PORTAL_LOGIN_PAGE?.trim(),
+      appName: inferredAppName,
+      portalLoginPage: env.IC_PORTAL_LOGIN_PAGE?.trim() || inferPortalLoginPage(inferredAppName),
       defaultStudentId: env.IC_DEFAULT_STUDENT_ID?.trim(),
       defaultStudentName: env.IC_DEFAULT_STUDENT_NAME?.trim(),
       sessionTtlMs: parsePositiveNumber(env.IC_SESSION_TTL_MS) ?? DEFAULT_SESSION_TTL_MS,
+      streamerMode: isStreamerModeEnabled(env),
     });
   }
 
@@ -127,7 +142,8 @@ export class InfiniteCampusClient {
   }
 
   public async getStudentProfile(selector: StudentSelector = {}): Promise<StudentProfile> {
-    return this.resolveStudent(selector, false);
+    const profile = await this.resolveStudent(selector, false);
+    return this.streamerMode ? maskStudentProfile(profile) : profile;
   }
 
   public async getGrades(selector: StudentSelector & { term?: string; quarter?: string } = {}): Promise<GradesSnapshot> {
@@ -135,7 +151,7 @@ export class InfiniteCampusClient {
     const apiGrades = await this.fetchGradesFromApi(student, selector.term, selector.quarter);
 
     if (apiGrades.length > 0) {
-      return {
+      const snapshot: GradesSnapshot = {
         student,
         term: selector.term,
         quarter: selector.quarter,
@@ -143,11 +159,12 @@ export class InfiniteCampusClient {
         grades: apiGrades,
         source: 'api',
       };
+      return this.streamerMode ? maskGradesSnapshot(snapshot) : snapshot;
     }
 
     const scrapedGrades = await this.fetchGradesFromPages(student, selector.term, selector.quarter);
     if (scrapedGrades.length > 0) {
-      return {
+      const snapshot: GradesSnapshot = {
         student,
         term: selector.term,
         quarter: selector.quarter,
@@ -155,6 +172,7 @@ export class InfiniteCampusClient {
         grades: scrapedGrades,
         source: 'scrape',
       };
+      return this.streamerMode ? maskGradesSnapshot(snapshot) : snapshot;
     }
 
     throw new InfiniteCampusError(
@@ -170,24 +188,26 @@ export class InfiniteCampusClient {
     const apiRecords = await this.fetchAttendanceFromApi(student, selector.startDate, selector.endDate);
 
     if (apiRecords.length > 0) {
-      return {
+      const snapshot: AttendanceSnapshot = {
         student,
         startDate: selector.startDate,
         endDate: selector.endDate,
         records: apiRecords,
         source: 'api',
       };
+      return this.streamerMode ? maskAttendanceSnapshot(snapshot) : snapshot;
     }
 
     const scrapedRecords = await this.fetchAttendanceFromPages(student, selector.startDate, selector.endDate);
     if (scrapedRecords.length > 0) {
-      return {
+      const snapshot: AttendanceSnapshot = {
         student,
         startDate: selector.startDate,
         endDate: selector.endDate,
         records: scrapedRecords,
         source: 'scrape',
       };
+      return this.streamerMode ? maskAttendanceSnapshot(snapshot) : snapshot;
     }
 
     throw new InfiniteCampusError(
@@ -201,20 +221,22 @@ export class InfiniteCampusClient {
     const apiEntries = await this.fetchScheduleFromApi(student);
 
     if (apiEntries.length > 0) {
-      return {
+      const snapshot: ScheduleSnapshot = {
         student,
         entries: apiEntries,
         source: 'api',
       };
+      return this.streamerMode ? maskScheduleSnapshot(snapshot) : snapshot;
     }
 
     const scrapedEntries = await this.fetchScheduleFromPages(student);
     if (scrapedEntries.length > 0) {
-      return {
+      const snapshot: ScheduleSnapshot = {
         student,
         entries: scrapedEntries,
         source: 'scrape',
       };
+      return this.streamerMode ? maskScheduleSnapshot(snapshot) : snapshot;
     }
 
     throw new InfiniteCampusError(
@@ -228,22 +250,24 @@ export class InfiniteCampusClient {
     const apiAssignments = await this.fetchAssignmentsFromApi(student, selector.term);
 
     if (apiAssignments.length > 0) {
-      return {
+      const snapshot: AssignmentsSnapshot = {
         student,
         term: selector.term,
         assignments: apiAssignments,
         source: 'api',
       };
+      return this.streamerMode ? maskAssignmentsSnapshot(snapshot) : snapshot;
     }
 
     const scrapedAssignments = await this.fetchAssignmentsFromPages(student, selector.term);
     if (scrapedAssignments.length > 0) {
-      return {
+      const snapshot: AssignmentsSnapshot = {
         student,
         term: selector.term,
         assignments: scrapedAssignments,
         source: 'scrape',
       };
+      return this.streamerMode ? maskAssignmentsSnapshot(snapshot) : snapshot;
     }
 
     throw new InfiniteCampusError(
@@ -257,24 +281,26 @@ export class InfiniteCampusClient {
     const apiCourses = await this.fetchReportCardFromApi(student, selector.term);
 
     if (apiCourses.length > 0) {
-      return {
+      const snapshot: ReportCardSnapshot = {
         student,
         term: selector.term,
         issuedAt: new Date().toISOString(),
         courses: apiCourses,
         source: 'api',
       };
+      return this.streamerMode ? maskReportCardSnapshot(snapshot) : snapshot;
     }
 
     const scrapedCourses = await this.fetchReportCardFromPages(student, selector.term);
     if (scrapedCourses.length > 0) {
-      return {
+      const snapshot: ReportCardSnapshot = {
         student,
         term: selector.term,
         issuedAt: new Date().toISOString(),
         courses: scrapedCourses,
         source: 'scrape',
       };
+      return this.streamerMode ? maskReportCardSnapshot(snapshot) : snapshot;
     }
 
     throw new InfiniteCampusError(
@@ -284,7 +310,8 @@ export class InfiniteCampusClient {
   }
 
   public async getDefaultStudentProfileForResource(): Promise<StudentProfile> {
-    return this.resolveStudent({}, true);
+    const profile = await this.resolveStudent({}, true);
+    return this.streamerMode ? maskStudentProfile(profile) : profile;
   }
 
   public async getCurrentGradesForResource(): Promise<GradesSnapshot> {
@@ -340,7 +367,7 @@ export class InfiniteCampusClient {
   }
 
   private async fetchStudentProfilesFromPages(): Promise<StudentProfile[]> {
-    for (const path of this.buildPortalPaths(['', 'home', 'summary'])) {
+    for (const path of dedupeStrings([...this.buildPortalPaths(['', 'home', 'summary']), ...this.buildHomePageCandidates()])) {
       const html = await this.fetchHtml(path || '/campus/portal/parents');
       if (!html) {
         continue;
@@ -353,7 +380,6 @@ export class InfiniteCampusClient {
         return students;
       }
 
-      // TODO(Data): Replace the fallback regex scraping below with portal-specific selectors from Edmond's IC instance.
       const regexStudents = [...html.matchAll(/data-student-id=["']([^"']+)["'][^>]*data-student-name=["']([^"']+)["']/gi)]
         .map((match) => ({ studentId: match[1], displayName: match[2] }))
         .map((row) => this.normalizeStudent(row, 'scrape'))
@@ -368,11 +394,14 @@ export class InfiniteCampusClient {
   }
 
   private async fetchGradesFromApi(student: StudentProfile, term?: string, quarter?: string): Promise<GradeEntry[]> {
-    const query = buildQuery({ studentId: student.studentId, term, quarter });
-    const paths = this.buildApiPaths([
-      `students/${encodeURIComponent(student.studentId ?? '')}/grades${query}`,
-      `grades${query}`,
-      `grades/current${query}`,
+    const personId = this.getStudentPersonId(student);
+    const paths = dedupeStrings([
+      personId ? `/campus/resources/portal/grades${buildQuery({ personID: personId, term, quarter })}` : '',
+      ...this.buildApiPaths([
+        `students/${encodeURIComponent(student.studentId ?? '')}/grades${buildQuery({ studentId: student.studentId, term, quarter })}`,
+        `grades${buildQuery({ personID: personId, studentId: student.studentId, term, quarter })}`,
+        `grades/current${buildQuery({ personID: personId, studentId: student.studentId, term, quarter })}`,
+      ]),
     ]);
 
     for (const path of paths) {
@@ -392,8 +421,10 @@ export class InfiniteCampusClient {
   }
 
   private async fetchGradesFromPages(student: StudentProfile, term?: string, quarter?: string): Promise<GradeEntry[]> {
-    const query = buildQuery({ studentId: student.studentId, term, quarter });
-    for (const path of this.buildPortalPaths([`grades${query}`, `instruction/grades${query}`])) {
+    const query = buildQuery({ personID: this.getStudentPersonId(student), studentId: student.studentId, term, quarter });
+    const paths = dedupeStrings([...this.buildPortalPaths([`grades${query}`, `instruction/grades${query}`]), ...this.buildHomePageCandidates()]);
+
+    for (const path of paths) {
       const html = await this.fetchHtml(path);
       if (!html) {
         continue;
@@ -405,7 +436,14 @@ export class InfiniteCampusClient {
         return grades;
       }
 
-      // TODO(Data): Replace this row matcher with real HTML selectors once a sample IC grade page is captured.
+      const selectorGrades = extractPortalNotifications(html)
+        .map((notification) => parseGradeNotification(notification, student, term, quarter))
+        .filter(Boolean) as GradeEntry[];
+
+      if (selectorGrades.length > 0) {
+        return selectorGrades;
+      }
+
       const regexGrades = [...html.matchAll(/data-course-name=["']([^"']+)["'][^>]*data-letter-grade=["']([^"']*)["'][^>]*data-percent=["']([^"']*)["']/gi)]
         .map((match) => ({ courseName: match[1], letterGrade: match[2], percent: match[3] }))
         .map((row) => this.normalizeGrade(row, 'scrape', term, quarter))
@@ -420,8 +458,19 @@ export class InfiniteCampusClient {
   }
 
   private async fetchAttendanceFromApi(student: StudentProfile, startDate?: string, endDate?: string): Promise<AttendanceRecord[]> {
-    const query = buildQuery({ studentId: student.studentId, startDate, endDate });
-    for (const path of this.buildApiPaths([`attendance${query}`, `students/${encodeURIComponent(student.studentId ?? '')}/attendance${query}`])) {
+    const personId = this.getStudentPersonId(student);
+    const enrollmentId = this.getPrimaryEnrollmentId(student);
+    const paths = dedupeStrings([
+      personId
+        ? `/campus/resources/portal/attendance/events${buildQuery({ personID: personId, enrollmentID: enrollmentId, startDate, endDate })}`
+        : '',
+      ...this.buildApiPaths([
+        `attendance${buildQuery({ personID: personId, enrollmentID: enrollmentId, studentId: student.studentId, startDate, endDate })}`,
+        `students/${encodeURIComponent(student.studentId ?? '')}/attendance${buildQuery({ studentId: student.studentId, startDate, endDate })}`,
+      ]),
+    ]);
+
+    for (const path of paths) {
       const payload = await this.fetchJson(path);
       if (!payload) {
         continue;
@@ -438,8 +487,10 @@ export class InfiniteCampusClient {
   }
 
   private async fetchAttendanceFromPages(student: StudentProfile, startDate?: string, endDate?: string): Promise<AttendanceRecord[]> {
-    const query = buildQuery({ studentId: student.studentId, startDate, endDate });
-    for (const path of this.buildPortalPaths([`attendance${query}`, `instruction/attendance${query}`])) {
+    const query = buildQuery({ personID: this.getStudentPersonId(student), studentId: student.studentId, startDate, endDate });
+    const paths = dedupeStrings([...this.buildPortalPaths([`attendance${query}`, `instruction/attendance${query}`]), ...this.buildHomePageCandidates()]);
+
+    for (const path of paths) {
       const html = await this.fetchHtml(path);
       if (!html) {
         continue;
@@ -451,7 +502,14 @@ export class InfiniteCampusClient {
         return records;
       }
 
-      // TODO(Data): Update selectors for Edmond's attendance table markup.
+      const selectorRecords = extractPortalNotifications(html)
+        .map((notification) => parseAttendanceNotification(notification, student))
+        .filter(Boolean) as AttendanceRecord[];
+
+      if (selectorRecords.length > 0) {
+        return selectorRecords;
+      }
+
       const regexRecords = [...html.matchAll(/data-date=["']([^"']+)["'][^>]*data-status=["']([^"']+)["']/gi)]
         .map((match) => ({ date: match[1], status: match[2] }))
         .map((row) => this.normalizeAttendance(row, 'scrape'))
@@ -466,8 +524,18 @@ export class InfiniteCampusClient {
   }
 
   private async fetchScheduleFromApi(student: StudentProfile): Promise<ScheduleEntry[]> {
-    const query = buildQuery({ studentId: student.studentId });
-    for (const path of this.buildApiPaths([`schedule${query}`, `students/${encodeURIComponent(student.studentId ?? '')}/schedule`])) {
+    const personId = this.getStudentPersonId(student);
+    const today = new Date().toISOString().slice(0, 10);
+    const paths = dedupeStrings([
+      personId ? `/campus/api/portal/plan${buildQuery({ personID: personId })}` : '',
+      personId ? `/campus/resources/portal/dayEvent/byEnrollment${buildQuery({ personID: personId, date: today })}` : '',
+      ...this.buildApiPaths([
+        `schedule${buildQuery({ personID: personId, studentId: student.studentId })}`,
+        `students/${encodeURIComponent(student.studentId ?? '')}/schedule`,
+      ]),
+    ]);
+
+    for (const path of paths) {
       const payload = await this.fetchJson(path);
       if (!payload) {
         continue;
@@ -484,7 +552,7 @@ export class InfiniteCampusClient {
   }
 
   private async fetchScheduleFromPages(student: StudentProfile): Promise<ScheduleEntry[]> {
-    const query = buildQuery({ studentId: student.studentId });
+    const query = buildQuery({ personID: this.getStudentPersonId(student), studentId: student.studentId });
     for (const path of this.buildPortalPaths([`schedule${query}`, `instruction/schedule${query}`])) {
       const html = await this.fetchHtml(path);
       if (!html) {
@@ -497,7 +565,6 @@ export class InfiniteCampusClient {
         return entries;
       }
 
-      // TODO(Data): Replace fallback regex with table/section scraping when HTML samples are available.
       const regexEntries = [...html.matchAll(/data-course-name=["']([^"']+)["'][^>]*data-period=["']([^"']*)["'][^>]*data-teacher=["']([^"']*)["']/gi)]
         .map((match) => ({ courseName: match[1], period: match[2], teacherName: match[3] }))
         .map((row) => this.normalizeSchedule(row, 'scrape'))
@@ -512,8 +579,19 @@ export class InfiniteCampusClient {
   }
 
   private async fetchAssignmentsFromApi(student: StudentProfile, term?: string): Promise<AssignmentRecord[]> {
-    const query = buildQuery({ studentId: student.studentId, term });
-    for (const path of this.buildApiPaths([`assignments${query}`, `students/${encodeURIComponent(student.studentId ?? '')}/assignments${query}`])) {
+    const personId = this.getStudentPersonId(student);
+    const today = new Date().toISOString().slice(0, 10);
+    const paths = dedupeStrings([
+      personId ? `/campus/api/portal/assignment/byDateRangeTotal${buildQuery({ personID: personId, startDate: `${today}T00:00:00`, endDate: `${today}T00:00:00` })}` : '',
+      personId ? `/campus/api/portal/assignment/recentlyScoredTotal${buildQuery({ personID: personId })}` : '',
+      personId ? `/campus/api/portal/assignment/missingTotal${buildQuery({ personID: personId, termID: term })}` : '',
+      ...this.buildApiPaths([
+        `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
+        `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
+      ]),
+    ]);
+
+    for (const path of paths) {
       const payload = await this.fetchJson(path);
       if (!payload) {
         continue;
@@ -530,8 +608,10 @@ export class InfiniteCampusClient {
   }
 
   private async fetchAssignmentsFromPages(student: StudentProfile, term?: string): Promise<AssignmentRecord[]> {
-    const query = buildQuery({ studentId: student.studentId, term });
-    for (const path of this.buildPortalPaths([`assignments${query}`, `instruction/assignments${query}`])) {
+    const query = buildQuery({ personID: this.getStudentPersonId(student), studentId: student.studentId, term });
+    const paths = dedupeStrings([...this.buildPortalPaths([`assignments${query}`, `instruction/assignments${query}`]), ...this.buildHomePageCandidates()]);
+
+    for (const path of paths) {
       const html = await this.fetchHtml(path);
       if (!html) {
         continue;
@@ -543,7 +623,14 @@ export class InfiniteCampusClient {
         return assignments;
       }
 
-      // TODO(Data): Replace fallback regex with actual assignment-card selectors.
+      const selectorAssignments = extractPortalNotifications(html)
+        .map((notification) => parseAssignmentNotification(notification, student))
+        .filter(Boolean) as AssignmentRecord[];
+
+      if (selectorAssignments.length > 0) {
+        return selectorAssignments;
+      }
+
       const regexAssignments = [...html.matchAll(/data-course-name=["']([^"']+)["'][^>]*data-assignment-title=["']([^"']+)["'][^>]*data-score=["']([^"']*)["']/gi)]
         .map((match) => ({ courseName: match[1], title: match[2], score: match[3] }))
         .map((row) => this.normalizeAssignment(row, 'scrape'))
@@ -589,7 +676,6 @@ export class InfiniteCampusClient {
         return courses;
       }
 
-      // TODO(Data): Replace fallback regex once report-card markup is captured from a real parent portal account.
       const regexCourses = [...html.matchAll(/data-course-name=["']([^"']+)["'][^>]*data-final-letter-grade=["']([^"']*)["'][^>]*data-final-percent=["']([^"']*)["']/gi)]
         .map((match) => ({ courseName: match[1], finalLetterGrade: match[2], finalPercent: match[3] }))
         .map((row) => this.normalizeReportCardCourse(row, 'scrape', term))
@@ -643,13 +729,20 @@ export class InfiniteCampusClient {
 
   private buildLoginAttempts(): RequestInit[] {
     const appName = this.config.appName || 'portal';
+    const districtLoginPage = appName !== 'portal' ? buildDistrictPortalLoginPath(appName) : undefined;
+    const portalLoginPage = this.config.portalLoginPage || inferPortalLoginPage(appName);
     const formFields: Record<string, string> = {
       username: this.config.username,
       password: this.config.password,
       appName,
+      url: 'nav-wrapper',
+      lang: 'en',
     };
-    if (this.config.portalLoginPage) {
-      formFields.portalLoginPage = this.config.portalLoginPage;
+    if (districtLoginPage) {
+      formFields.portalUrl = districtLoginPage.replace(/^\//, '');
+    }
+    if (portalLoginPage) {
+      formFields.portalLoginPage = portalLoginPage;
     }
     const formPayload = new URLSearchParams(formFields);
 
@@ -790,11 +883,24 @@ export class InfiniteCampusClient {
   }
 
   private buildLoginPageCandidates(): string[] {
-    return dedupeStrings([this.config.loginPagePath, ...DEFAULT_LOGIN_PAGE_CANDIDATES].filter(Boolean) as string[]);
+    const districtLoginPages = this.config.appName ? [buildDistrictPortalLoginPath(this.config.appName, 'parents')] : [];
+    return dedupeStrings([this.config.loginPagePath, ...districtLoginPages, ...DEFAULT_LOGIN_PAGE_CANDIDATES].filter(Boolean) as string[]);
   }
 
   private buildLoginPostCandidates(): string[] {
     return dedupeStrings([this.config.loginPath, ...DEFAULT_LOGIN_POST_CANDIDATES].filter(Boolean) as string[]);
+  }
+
+  private buildHomePageCandidates(): string[] {
+    return DEFAULT_HOME_PAGE_CANDIDATES;
+  }
+
+  private getStudentPersonId(student: StudentProfile): string | undefined {
+    return student.personId ?? student.studentId;
+  }
+
+  private getPrimaryEnrollmentId(student: StudentProfile): string | undefined {
+    return getPrimaryEnrollment(student.raw)?.enrollmentID;
   }
 
   private findBestObjectArray(source: unknown, predicate: (item: Record<string, unknown>) => boolean): Record<string, unknown>[] {
@@ -824,23 +930,26 @@ export class InfiniteCampusClient {
     const displayName = pickFirstString(raw, ['displayName', 'studentName', 'name'])
       ?? joinName(pickFirstString(raw, ['firstName']), pickFirstString(raw, ['lastName']));
 
-    const studentId = pickFirstString(raw, ['studentId', 'studentID', 'id', 'personID', 'personId', 'studentNumber']);
+    const studentId = pickFirstText(raw, ['studentId', 'studentID', 'id', 'personID', 'personId', 'studentNumber']);
     if (!displayName || !studentId) {
       return undefined;
     }
 
+    const primaryEnrollment = getPrimaryEnrollment(raw);
+    const personId = pickFirstText(raw, ['personId', 'personID']) ?? studentId;
+
     return {
       studentId,
-      personId: pickFirstString(raw, ['personId', 'personID']),
+      personId,
       displayName,
       firstName: pickFirstString(raw, ['firstName']),
       lastName: pickFirstString(raw, ['lastName']),
-      gradeLevel: pickFirstString(raw, ['gradeLevel', 'grade']),
-      schoolName: pickFirstString(raw, ['schoolName', 'school']),
-      campusName: pickFirstString(raw, ['campusName', 'campus']),
+      gradeLevel: pickFirstString(raw, ['gradeLevel', 'grade']) ?? primaryEnrollment?.grade,
+      schoolName: pickFirstString(raw, ['schoolName', 'school']) ?? primaryEnrollment?.schoolName,
+      campusName: pickFirstString(raw, ['campusName', 'campus']) ?? primaryEnrollment?.calendarName ?? primaryEnrollment?.structureName,
       studentNumber: pickFirstString(raw, ['studentNumber']),
       birthDate: normalizeDate(pickFirstString(raw, ['birthDate', 'dob'])),
-      profilePhotoUrl: pickFirstString(raw, ['profilePhotoUrl', 'photoUrl']),
+      profilePhotoUrl: pickFirstString(raw, ['profilePhotoUrl', 'photoUrl']) ?? buildPersonPicturePath(personId),
       source,
       raw,
     };
@@ -1086,6 +1195,24 @@ function pickFirstString(record: Record<string, unknown>, keys: string[]): strin
   return undefined;
 }
 
+function pickFirstText(record: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === 'string') {
+      const normalized = value.trim();
+      if (normalized) {
+        return normalized;
+      }
+    }
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+
+  return undefined;
+}
+
 function pickFirstNumber(record: Record<string, unknown>, keys: string[]): number | undefined {
   for (const key of keys) {
     const value = record[key];
@@ -1229,4 +1356,169 @@ function extractJsonBlobsFromHtml(html: string): unknown[] {
   }
 
   return blobs;
+}
+
+function inferAppNameFromBaseUrl(baseUrl: string): string | undefined {
+  try {
+    const pathname = new URL(baseUrl).pathname;
+    const match = pathname.match(/\/campus\/portal\/(?:parents|students)\/([^/]+)\.jsp$/i);
+    return match?.[1];
+  } catch {
+    return undefined;
+  }
+}
+
+function inferPortalLoginPage(appName: string | undefined): string | undefined {
+  return appName && appName !== 'portal' ? `${appName}.jsp` : undefined;
+}
+
+function buildDistrictPortalLoginPath(appName: string, audience: 'parents' | 'students' = 'parents'): string {
+  return `/campus/portal/${audience}/${appName}.jsp`;
+}
+
+function buildPersonPicturePath(personId: string | undefined): string | undefined {
+  return personId ? `/campus/personPicture.jsp?personID=${encodeURIComponent(personId)}` : undefined;
+}
+
+function getPrimaryEnrollment(raw: unknown):
+  | { enrollmentID?: string; grade?: string; schoolName?: string; calendarName?: string; structureName?: string }
+  | undefined {
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+
+  const enrollments = raw.enrollments;
+  if (!Array.isArray(enrollments)) {
+    return undefined;
+  }
+
+  const current = enrollments.find((entry) => isRecord(entry) && entry.showOnPortal === true);
+  const enrollment = isRecord(current) ? current : enrollments.find(isRecord);
+  if (!enrollment) {
+    return undefined;
+  }
+
+  return {
+    enrollmentID: pickFirstText(enrollment, ['enrollmentID', 'enrollmentId', 'id']),
+    grade: pickFirstString(enrollment, ['grade']),
+    schoolName: pickFirstString(enrollment, ['schoolName']),
+    calendarName: pickFirstString(enrollment, ['calendarName']),
+    structureName: pickFirstString(enrollment, ['structureName']),
+  };
+}
+
+function extractPortalNotifications(html: string): Array<{ text: string; dateText?: string }> {
+  return [...html.matchAll(/<div[^>]*class="notification__text__container"[^>]*>[\s\S]*?<a[^>]*class="[^"]*notification__text[^"]*"[^>]*>([\s\S]*?)<\/a>[\s\S]*?(?:<p[^>]*class="[^"]*notification__date[^"]*"[^>]*>([\s\S]*?)<\/p>)?[\s\S]*?<\/div>/gi)]
+    .map((match) => ({
+      text: cleanHtmlText(match[1]) ?? '',
+      dateText: cleanHtmlText(match[2]),
+    }))
+    .filter((notification) => Boolean(notification.text));
+}
+
+function parseGradeNotification(
+  notification: { text: string; dateText?: string },
+  student: StudentProfile,
+  term?: string,
+  quarter?: string,
+): GradeEntry | undefined {
+  const match = /^(.+?) has an updated grade of ([^()]+?) \(([\d.]+)%\) in (.+?): (.+)$/i.exec(notification.text);
+  if (!match || !notificationBelongsToStudent(match[1], student)) {
+    return undefined;
+  }
+
+  const gradeToken = match[2].trim();
+  const [scoreText, letterGrade] = gradeToken.split('/').map((part) => part?.trim()).filter(Boolean);
+
+  return {
+    courseName: match[4].trim(),
+    term,
+    quarter: quarter ?? match[5].trim(),
+    percent: Number(match[3]),
+    score: scoreText ? Number(scoreText) : undefined,
+    letterGrade: letterGrade ?? gradeToken,
+    source: 'scrape',
+    raw: notification,
+  };
+}
+
+function parseAttendanceNotification(
+  notification: { text: string; dateText?: string },
+  student: StudentProfile,
+): AttendanceRecord | undefined {
+  const match = /^(.+?) was marked (.+?) in (.+?) on (\d{1,2}\/\d{1,2}\/\d{4})$/i.exec(notification.text);
+  if (!match || !notificationBelongsToStudent(match[1], student)) {
+    return undefined;
+  }
+
+  return {
+    date: normalizeDate(match[4]) ?? match[4],
+    status: normalizeAttendanceStatus({ status: match[2] }),
+    className: match[3].trim(),
+    source: 'scrape',
+    raw: notification,
+  };
+}
+
+function parseAssignmentNotification(
+  notification: { text: string; dateText?: string },
+  student: StudentProfile,
+): AssignmentRecord | undefined {
+  const flaggedMatch = /^(.+?)'s assignment (.+?) in (.+?) has been flagged \(([^)]+)\)$/i.exec(notification.text);
+  if (flaggedMatch && notificationBelongsToStudent(flaggedMatch[1], student)) {
+    const flag = flaggedMatch[4].trim().toLowerCase();
+    return {
+      courseName: flaggedMatch[3].trim(),
+      title: flaggedMatch[2].trim(),
+      isMissing: flag.includes('missing'),
+      isLate: flag.includes('late'),
+      source: 'scrape',
+      raw: notification,
+    };
+  }
+
+  const scoredMatch = /^(.+?) received a score of ([\d.]+)(?: out of ([\d.]+))? on (.+?) in (.+?)(?: and the assignment has been flagged \(([^)]+)\))?$/i.exec(notification.text);
+  if (!scoredMatch || !notificationBelongsToStudent(scoredMatch[1], student)) {
+    return undefined;
+  }
+
+  const flag = scoredMatch[6]?.trim().toLowerCase() ?? '';
+  return {
+    courseName: scoredMatch[5].trim(),
+    title: scoredMatch[4].trim(),
+    score: Number(scoredMatch[2]),
+    pointsPossible: scoredMatch[3] ? Number(scoredMatch[3]) : undefined,
+    isMissing: flag.includes('missing'),
+    isLate: flag.includes('late'),
+    source: 'scrape',
+    raw: notification,
+  };
+}
+
+function notificationBelongsToStudent(nameText: string, student: StudentProfile): boolean {
+  const candidates = [student.firstName, student.displayName, student.displayName.split(' ')[0]]
+    .filter(Boolean)
+    .map((value) => normalizeName(value!));
+  const normalizedName = normalizeName(nameText.replace(/'s$/i, ''));
+  return candidates.includes(normalizedName);
+}
+
+function cleanHtmlText(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const withoutTags = value.replace(/<[^>]+>/g, ' ');
+  const decoded = decodeHtmlEntities(withoutTags).replace(/\s+/g, ' ').trim();
+  return decoded || undefined;
+}
+
+function decodeHtmlEntities(value: string): string {
+  return value
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>');
 }
