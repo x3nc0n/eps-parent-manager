@@ -44,6 +44,7 @@ export declare class InfiniteCampusClient {
     private fetchScheduleFromApi;
     private fetchScheduleFromPages;
     private fetchAssignmentsFromApi;
+    private fetchAssignmentsViaGradeDetail;
     private fetchAssignmentsFromPages;
     private fetchReportCardFromApi;
     private fetchReportCardFromPages;

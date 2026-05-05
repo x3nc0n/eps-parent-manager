@@ -465,19 +465,12 @@ class InfiniteCampusClient {
     }
     async fetchAssignmentsFromApi(student, term, filter) {
         const personId = this.getStudentPersonId(student);
-        const today = new Date().toISOString().slice(0, 10);
-        // IC's /assignment/missing*, /assignment/*Total, /assignment/byDateRangeTotal, etc.
-        // all return only counts (numbers), not assignment objects.
-        // The actual assignment data comes from the generic assignment list endpoints
-        // or from the grades detail view. We try those and post-filter for missing if needed.
+        // Strategy 1: Try generic assignment list endpoints (works on some portals)
         const paths = dedupeStrings([
             ...this.buildApiPaths([
                 `assignments${buildQuery({ personID: personId, studentId: student.studentId, term })}`,
                 `students/${encodeURIComponent(student.studentId ?? '')}/assignments${buildQuery({ studentId: student.studentId, term })}`,
             ]),
-            // Some IC portals expose assignment data through the grades detail endpoint
-            personId ? `/campus/resources/portal/grades${buildQuery({ personID: personId, term })}` : '',
-            personId ? `/campus/api/portal/grades${buildQuery({ personID: personId, term })}` : '',
         ]);
         for (const path of paths) {
             const payload = await this.fetchJson(path);
@@ -489,16 +482,110 @@ class InfiniteCampusClient {
                 continue;
             }
             const rows = this.findBestObjectArray(payload, (item) => hasAnyKey(item, ['title', 'assignmentName', 'assignment']) && hasAnyKey(item, ['courseName', 'course', 'className', 'sectionName']));
-            let assignments = rows.map((row) => this.normalizeAssignment(row, 'api')).filter(Boolean);
+            const assignments = rows.map((row) => this.normalizeAssignment(row, 'api')).filter(Boolean);
             if (assignments.length > 0) {
                 if (filter === 'missing') {
-                    const missingOnly = assignments.filter((a) => a.isMissing === true);
-                    return missingOnly;
+                    return assignments.filter((a) => a.isMissing === true);
+                }
+                return assignments;
+            }
+        }
+        // Strategy 2: Grade detail endpoint — the proven approach for Edmond PS.
+        // Step 1: Get grades list to discover sectionIDs with hasDetail: true
+        // Step 2: Fetch /campus/resources/portal/grades/detail/{sectionID}?personID={personID}
+        // Step 3: Flatten categories[].assignments[] into AssignmentRecord[]
+        if (personId) {
+            const assignments = await this.fetchAssignmentsViaGradeDetail(personId, term);
+            if (assignments.length > 0) {
+                if (filter === 'missing') {
+                    return assignments.filter((a) => a.isMissing === true);
                 }
                 return assignments;
             }
         }
         return [];
+    }
+    async fetchAssignmentsViaGradeDetail(personId, term) {
+        // Step 1: Get the grades list to find courses with detail available
+        const gradesPayload = await this.fetchJson(`/campus/resources/portal/grades${buildQuery({ personID: personId })}`);
+        if (!gradesPayload) {
+            return [];
+        }
+        // Skip count-only responses
+        if (typeof gradesPayload === 'number' || (typeof gradesPayload === 'string' && /^\d+$/.test(gradesPayload.trim()))) {
+            return [];
+        }
+        // The grades response is an array of enrollment objects, each with a terms[] array
+        const enrollments = Array.isArray(gradesPayload) ? gradesPayload : [gradesPayload];
+        const sectionIds = [];
+        for (const enrollment of enrollments) {
+            if (!enrollment || typeof enrollment !== 'object')
+                continue;
+            const terms = enrollment.terms;
+            if (!Array.isArray(terms))
+                continue;
+            for (const t of terms) {
+                if (!t || typeof t !== 'object')
+                    continue;
+                const termObj = t;
+                // Filter by term name if specified
+                if (term && typeof termObj.termName === 'string' && termObj.termName !== term)
+                    continue;
+                const courses = termObj.courses;
+                if (!Array.isArray(courses))
+                    continue;
+                for (const course of courses) {
+                    if (!course || typeof course !== 'object')
+                        continue;
+                    const c = course;
+                    const gradingTasks = c.gradingTasks;
+                    if (!Array.isArray(gradingTasks))
+                        continue;
+                    const hasDetail = gradingTasks.some((gt) => gt && typeof gt === 'object' && gt.hasDetail === true);
+                    if (hasDetail && typeof c.sectionID === 'number') {
+                        sectionIds.push({
+                            sectionID: c.sectionID,
+                            courseName: (typeof c.courseName === 'string' ? c.courseName : '') || 'Unknown Course',
+                        });
+                    }
+                }
+            }
+        }
+        if (sectionIds.length === 0) {
+            return [];
+        }
+        // Step 2: Fetch detail for each section and flatten assignments
+        const allAssignments = [];
+        for (const { sectionID } of sectionIds) {
+            const detailPayload = await this.fetchJson(`/campus/resources/portal/grades/detail/${sectionID}${buildQuery({ personID: personId })}`);
+            if (!detailPayload || typeof detailPayload !== 'object')
+                continue;
+            const detail = detailPayload;
+            const details = Array.isArray(detail.details) ? detail.details : [];
+            for (const d of details) {
+                if (!d || typeof d !== 'object')
+                    continue;
+                const dObj = d;
+                const categories = Array.isArray(dObj.categories) ? dObj.categories : [];
+                for (const cat of categories) {
+                    if (!cat || typeof cat !== 'object')
+                        continue;
+                    const catObj = cat;
+                    const categoryName = typeof catObj.name === 'string' ? catObj.name : undefined;
+                    const assignments = Array.isArray(catObj.assignments) ? catObj.assignments : [];
+                    for (const assignment of assignments) {
+                        if (!assignment || typeof assignment !== 'object')
+                            continue;
+                        const a = assignment;
+                        const record = this.normalizeAssignment({ ...a, category: categoryName }, 'api');
+                        if (record) {
+                            allAssignments.push(record);
+                        }
+                    }
+                }
+            }
+        }
+        return allAssignments;
     }
     async fetchAssignmentsFromPages(student, term) {
         const query = buildQuery({ personID: this.getStudentPersonId(student), studentId: student.studentId, term });
@@ -845,15 +932,15 @@ class InfiniteCampusClient {
             return undefined;
         }
         return {
-            assignmentId: pickFirstString(raw, ['assignmentId', 'assignmentID', 'id']),
-            courseId: pickFirstString(raw, ['courseId', 'courseID']),
+            assignmentId: pickFirstString(raw, ['assignmentId', 'assignmentID', 'groupActivityID', 'id']),
+            courseId: pickFirstString(raw, ['courseId', 'courseID', 'sectionID', 'objectSectionID']),
             courseName,
             title,
-            category: pickFirstString(raw, ['category', 'categoryName']),
+            category: pickFirstString(raw, ['category', 'categoryName', 'groupName']),
             dueDate: normalizeDate(pickFirstString(raw, ['dueDate'])),
             assignedDate: normalizeDate(pickFirstString(raw, ['assignedDate'])),
-            score: pickFirstNumber(raw, ['score', 'pointsEarned']),
-            pointsPossible: pickFirstNumber(raw, ['pointsPossible', 'maxPoints']),
+            score: pickFirstNumber(raw, ['score', 'scorePoints', 'pointsEarned']),
+            pointsPossible: pickFirstNumber(raw, ['pointsPossible', 'totalPoints', 'maxPoints']),
             isMissing: pickFirstBoolean(raw, ['isMissing', 'missing']),
             isLate: pickFirstBoolean(raw, ['isLate', 'late']),
             comments: pickFirstString(raw, ['comments', 'comment']),
