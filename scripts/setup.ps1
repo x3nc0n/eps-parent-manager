@@ -60,6 +60,83 @@ function Initialize-Git {
     Invoke-Step 'initialize a fresh git repository' { git -C $RootDir init -q | Out-Null }
 }
 
+function Install-Prerequisites {
+    if ($NoDeps) {
+        Write-Info 'Skipping prerequisite installation (-NoDeps)'
+        return
+    }
+
+    # Check for gh CLI
+    if (-not (Command-Exists 'gh')) {
+        Write-Info 'GitHub CLI (gh) is not installed.'
+        Write-Info 'Install it from https://cli.github.com/ for the best experience.'
+        Write-Info 'On Windows: winget install --id GitHub.cli'
+        return
+    }
+
+    # Check gh auth
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Info 'GitHub CLI needs authentication. Starting login...'
+        if (-not $DryRun) {
+            & gh auth login
+        } else {
+            Write-Info 'Would run: gh auth login'
+        }
+    }
+
+    # GitHub Copilot CLI extension
+    $copilotCheck = & gh copilot --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Info 'Installing GitHub Copilot CLI extension...'
+        if (-not $DryRun) {
+            & gh extension install github/gh-copilot 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn 'Could not install Copilot extension (may require Copilot license)'
+            }
+        }
+    }
+}
+
+function New-GitHubRepo {
+    if (-not (Command-Exists 'gh')) {
+        Write-Warn 'gh is not installed. Skipping GitHub repository creation.'
+        return
+    }
+
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn 'gh is not authenticated. Skipping GitHub repository creation.'
+        return
+    }
+
+    # If a remote already exists, skip
+    $remoteUrl = & git -C $RootDir remote get-url origin 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Info "Git remote 'origin' already configured; skipping repo creation"
+        return
+    }
+
+    $repoName = Split-Path -Leaf $RootDir
+    Write-Info "Creating private GitHub repository '$repoName'..."
+
+    if ($DryRun) {
+        Write-Info "Would run: gh repo create $repoName --private --source $RootDir --push"
+        return
+    }
+
+    # Initial commit so we have something to push
+    & git -C $RootDir add -A
+    & git -C $RootDir commit -q -m "Initial commit: EPS Parent Manager toolkit v$CurrentVersion" 2>&1 | Out-Null
+
+    $result = & gh repo create $repoName --private --source $RootDir --push 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-Info 'GitHub repository created and pushed successfully'
+    } else {
+        Write-Warn "Could not create GitHub repository. You can do this manually later with: gh repo create"
+    }
+}
+
 function Install-Dependencies {
     if ($NoDeps) {
         Write-Info 'Skipping dependency installation (-NoDeps)'
@@ -441,22 +518,58 @@ function Invoke-UpdateMode {
 
 function Invoke-InstallMode {
     Write-Info "Running first-time setup for EPS Parent Manager $CurrentVersion"
+
+    # Install prerequisites first (gh, gh auth) so they're available for later steps
+    Install-Prerequisites
+
     Ensure-PersonalFile -SourcePath (Join-Path $RootDir '.env.example') -TargetPath (Join-Path $RootDir '.env')
     Ensure-PersonalFile -SourcePath (Join-Path $RootDir 'config/personal.yaml.example') -TargetPath (Join-Path $RootDir 'config/personal.yaml')
     Seed-Vault
     Initialize-Git
     Write-VersionFile $CurrentVersion
     Install-Dependencies
+
+    # Create GitHub repo, initial commit, and push
+    New-GitHubRepo
+
+    # Create onboarding issues (requires a GitHub remote to exist)
     Create-OnboardingIssues
+
+    # Determine the repo URL for the final message
+    $repoUrl = $null
+    if ((Command-Exists 'gh')) {
+        & gh auth status *> $null
+        if ($LASTEXITCODE -eq 0) {
+            & gh repo view *> $null
+            if ($LASTEXITCODE -eq 0) {
+                $repoUrl = (& gh repo view --json url -q '.url' 2>$null)
+            }
+        }
+    }
 
     Write-Info 'Done!'
     Write-Host ''
-    Write-Host 'Next steps:'
-    Write-Host '  1. Fill in .env with your Infinite Campus, Canvas, and Google credentials.'
-    Write-Host '  2. Review config/personal.yaml for your family details.'
-    Write-Host '  3. Open vault/ in Obsidian and start using the templates.'
-    Write-Host '  4. Check the guided GitHub issues that setup created in your personal repo.'
-    Write-Host '  5. Run .\scripts\setup.ps1 -Update later to pull template updates.'
+    if ($repoUrl) {
+        Write-Host "✅ Your family toolkit is ready!"
+        Write-Host ''
+        Write-Host "Your repo: $repoUrl"
+        Write-Host "Issues:    $repoUrl/issues"
+        Write-Host ''
+        Write-Host "Next steps — work through the guided setup issues in order:"
+        Write-Host "  $repoUrl/issues"
+        Write-Host ''
+        Write-Host 'Each issue walks you through one piece of configuration:'
+        Write-Host '  credentials, family profile, integrations, and verification.'
+        Write-Host ''
+        Write-Host 'Later, run .\scripts\setup.ps1 -Update to pull template updates.'
+    } else {
+        Write-Host 'Next steps:'
+        Write-Host "  1. Run 'gh auth login' and then 'gh repo create' to push to GitHub."
+        Write-Host '  2. Fill in .env with your Infinite Campus, Canvas, and Google credentials.'
+        Write-Host '  3. Review config/personal.yaml for your family details.'
+        Write-Host '  4. Open vault/ in Obsidian and start using the templates.'
+        Write-Host '  5. Run .\scripts\setup.ps1 -Update later to pull template updates.'
+    }
 }
 
 $hasPersonalLayer = (Test-Path (Join-Path $RootDir 'vault')) -or (Test-Path (Join-Path $RootDir '.env')) -or (Test-Path (Join-Path $RootDir 'config/personal.yaml'))

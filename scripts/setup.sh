@@ -536,27 +536,96 @@ run_update() {
   info "Update complete. Personal files in vault/, .env, and config/ were left untouched."
 }
 
+maybe_create_github_repo() {
+  if ! command_exists gh; then
+    warn "gh is not installed. Skipping GitHub repository creation."
+    return
+  fi
+
+  if ! gh auth status >/dev/null 2>&1; then
+    warn "gh is not authenticated. Skipping GitHub repository creation."
+    return
+  fi
+
+  # If a remote already exists, skip
+  if git -C "$ROOT_DIR" remote get-url origin >/dev/null 2>&1; then
+    info "Git remote 'origin' already configured; skipping repo creation"
+    return
+  fi
+
+  local repo_name
+  repo_name="$(basename "$ROOT_DIR")"
+
+  info "Creating private GitHub repository '$repo_name'..."
+  if $DRY_RUN; then
+    info "Would run: gh repo create $repo_name --private --source $ROOT_DIR --push"
+    return
+  fi
+
+  # Initial commit so we have something to push
+  git -C "$ROOT_DIR" add -A
+  git -C "$ROOT_DIR" commit -q -m "Initial commit: EPS Parent Manager toolkit v$CURRENT_VERSION" || true
+
+  if gh repo create "$repo_name" --private --source "$ROOT_DIR" --push; then
+    info "GitHub repository created and pushed successfully"
+  else
+    warn "Could not create GitHub repository. You can do this manually later with: gh repo create"
+  fi
+}
+
 run_install() {
   info "Running first-time setup for EPS Parent Manager $CURRENT_VERSION"
+
+  # Install prerequisites first (node, gh, gh auth) so they're available for later steps
+  install_prerequisites
+
   prepare_personal_file "$ROOT_DIR/.env.example" "$ROOT_DIR/.env"
   prepare_personal_file "$ROOT_DIR/config/personal.yaml.example" "$ROOT_DIR/config/personal.yaml"
   seed_vault
   maybe_init_git
   write_file "$ROOT_DIR/$VERSION_FILE" "$CURRENT_VERSION"
-  install_prerequisites
   maybe_install_deps
+
+  # Create GitHub repo, initial commit, and push (requires gh auth from install_prerequisites)
+  maybe_create_github_repo
+
+  # Create onboarding issues (requires a GitHub remote to exist)
   create_onboarding_issues
 
+  # Determine the repo URL for the final message
+  local repo_url=""
+  if command_exists gh && gh auth status >/dev/null 2>&1 && gh repo view >/dev/null 2>&1; then
+    repo_url="$(gh repo view --json url -q '.url' 2>/dev/null || true)"
+  fi
+
   info 'Done!'
-  cat <<NEXT
+  if [[ -n "$repo_url" ]]; then
+    cat <<NEXT
+
+✅ Your family toolkit is ready!
+
+Your repo: $repo_url
+Issues:    ${repo_url}/issues
+
+Next steps — work through the guided setup issues in order:
+  ${repo_url}/issues
+
+Each issue walks you through one piece of configuration:
+  credentials, family profile, integrations, and verification.
+
+Later, run ./scripts/setup.sh --update to pull template updates.
+NEXT
+  else
+    cat <<NEXT
 
 Next steps:
-  1. Fill in .env with your Infinite Campus, Canvas, and Google credentials.
-  2. Review config/personal.yaml for your family details.
-  3. Open vault/ in Obsidian and start using the templates.
-  4. Check the guided GitHub issues that setup created in your personal repo.
+  1. Run 'gh auth login' and then 'gh repo create' to push to GitHub.
+  2. Fill in .env with your Infinite Campus, Canvas, and Google credentials.
+  3. Review config/personal.yaml for your family details.
+  4. Open vault/ in Obsidian and start using the templates.
   5. Run ./scripts/setup.sh --update later to pull template updates.
 NEXT
+  fi
 }
 
 if [[ "$MODE" == "update" ]]; then
