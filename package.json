@@ -5,6 +5,7 @@
   "description": "Parent-owned integration toolkit for Edmond Public Schools workflows.",
   "type": "commonjs",
   "scripts": {
+    "build": "npm run build --workspaces --if-present",
     "test": "vitest run --config vitest.config.ts",
     "test:watch": "vitest --config vitest.config.ts",
     "test:pii": "vitest run --config vitest.config.ts tests/pii-check.test.ts",

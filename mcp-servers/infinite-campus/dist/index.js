@@ -63,6 +63,7 @@ const attendanceSchema = z.object({
 const assignmentsSchema = z.object({
     ...studentSelectorFields,
     term: z.string().optional().describe('Optional school term to filter assignments'),
+    filter: z.enum(['all', 'missing']).optional().describe('When "missing", prioritize the missing-assignments endpoint and return only missing assignments'),
 });
 const reportCardSchema = z.object({
     ...studentSelectorFields,

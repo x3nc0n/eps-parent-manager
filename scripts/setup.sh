@@ -299,6 +299,32 @@ maybe_install_deps() {
   fi
 }
 
+maybe_build_workspaces() {
+  if $NO_DEPS; then
+    return
+  fi
+
+  if ! command_exists npm; then
+    return
+  fi
+
+  if [[ ! -f "$ROOT_DIR/package.json" ]]; then
+    return
+  fi
+
+  info "Building MCP server workspaces"
+  if $DRY_RUN; then
+    info "Would run npm run build in each workspace"
+  else
+    for ws_dir in "$ROOT_DIR"/mcp-servers/*/; do
+      if [[ -f "$ws_dir/package.json" ]] && grep -q '"build"' "$ws_dir/package.json" 2>/dev/null; then
+        info "  Building $(basename "$ws_dir")"
+        (cd "$ws_dir" && npm run build)
+      fi
+    done
+  fi
+}
+
 trim() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -533,6 +559,7 @@ run_update() {
 
   install_prerequisites
   maybe_install_deps
+  maybe_build_workspaces
   info "Update complete. Personal files in vault/, .env, and config/ were left untouched."
 }
 
@@ -585,6 +612,7 @@ run_install() {
   maybe_init_git
   write_file "$ROOT_DIR/$VERSION_FILE" "$CURRENT_VERSION"
   maybe_install_deps
+  maybe_build_workspaces
 
   # Create GitHub repo, initial commit, and push (requires gh auth from install_prerequisites)
   maybe_create_github_repo

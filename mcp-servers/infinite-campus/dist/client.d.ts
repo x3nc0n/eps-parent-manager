@@ -27,6 +27,7 @@ export declare class InfiniteCampusClient {
     getSchedule(selector?: StudentSelector): Promise<ScheduleSnapshot>;
     getAssignments(selector?: StudentSelector & {
         term?: string;
+        filter?: 'all' | 'missing';
     }): Promise<AssignmentsSnapshot>;
     getReportCard(selector?: StudentSelector & {
         term?: string;
