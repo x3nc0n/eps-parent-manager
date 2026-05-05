@@ -95,6 +95,191 @@ function Install-Dependencies {
     }
 }
 
+function Get-FrontMatterValue {
+    param(
+        [string]$FrontMatter,
+        [string]$Key
+    )
+
+    foreach ($line in ($FrontMatter -split "`r?`n")) {
+        if ($line -match "^$([regex]::Escape($Key)):\s*(.+)$") {
+            return $matches[1].Trim().Trim('"')
+        }
+    }
+
+    return $null
+}
+
+function Get-LabelMetadata {
+    param([string]$Label)
+
+    switch ($Label) {
+        'onboarding' { return @{ Color = '0075ca'; Description = 'Setup and onboarding steps' } }
+        'no-credentials-needed' { return @{ Color = '0e8a16'; Description = 'Safe to start anytime' } }
+        'credentials' { return @{ Color = 'd73a4a'; Description = 'Involves secrets or passwords' } }
+        'infinite-campus' { return @{ Color = '1d76db'; Description = 'Infinite Campus integration' } }
+        'canvas' { return @{ Color = 'd93f0b'; Description = 'Canvas LMS integration' } }
+        'most-complex' { return @{ Color = '5319e7'; Description = 'Read carefully - most involved step' } }
+        'google' { return @{ Color = 'fbca04'; Description = 'Google Workspace integration' } }
+        'obsidian' { return @{ Color = '7057ff'; Description = 'Obsidian vault setup' } }
+        'verification' { return @{ Color = '0e8a16'; Description = 'Health check and verification' } }
+        'optional' { return @{ Color = 'e4e669'; Description = 'Nice-to-have, not required' } }
+        default { return @{ Color = 'ededed'; Description = 'Guided setup label' } }
+    }
+}
+
+function Get-IssueNumberFromJson {
+    param([string]$Json)
+
+    if ([string]::IsNullOrWhiteSpace($Json)) {
+        return $null
+    }
+
+    try {
+        $parsed = $Json | ConvertFrom-Json
+        if ($parsed -is [System.Array]) {
+            if ($parsed.Count -gt 0 -and $parsed[0].number) {
+                return [string]$parsed[0].number
+            }
+        }
+        elseif ($parsed.number) {
+            return [string]$parsed.number
+        }
+    }
+    catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Create-OnboardingIssues {
+    $onboardingDir = Join-Path $ScriptDir 'onboarding'
+    $stepOneTitle = '⭐ Step 1: Set up your family profile'
+    $stepOneNumber = $null
+
+    if (-not (Test-Path $onboardingDir)) {
+        Write-Warn 'scripts/onboarding/ not found; skipping guided setup issues.'
+        return
+    }
+    if (-not (Command-Exists 'gh')) {
+        Write-Info 'Install GitHub CLI (gh) to get guided setup issues: https://cli.github.com/'
+        return
+    }
+
+    & gh auth status *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Info "GitHub CLI is installed, but not authenticated. Run 'gh auth login' to get guided setup issues."
+        return
+    }
+
+    & gh repo view *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn 'GitHub CLI could not determine the current GitHub repository. Skipping guided setup issues.'
+        return
+    }
+
+    $templates = Get-ChildItem -Path $onboardingDir -Filter '*.md' | Sort-Object Name
+    if (-not $templates) {
+        Write-Warn 'No onboarding issue templates found in scripts/onboarding/.'
+        return
+    }
+
+    if ($DryRun) {
+        Write-Info 'Would prepare onboarding issue bodies in .eps-setup-workdir'
+    }
+    else {
+        New-Item -ItemType Directory -Path $WorkDir -Force | Out-Null
+    }
+
+    foreach ($template in $templates) {
+        $raw = Get-Content -Path $template.FullName -Raw
+        if ($raw -notmatch '(?ms)^---\r?\n(.*?)\r?\n---\r?\n?(.*)$') {
+            Write-Warn "Template is missing valid frontmatter: $($template.FullName)"
+            continue
+        }
+
+        $frontMatter = $matches[1]
+        $body = $matches[2]
+        $title = Get-FrontMatterValue -FrontMatter $frontMatter -Key 'title'
+        $labelsCsv = Get-FrontMatterValue -FrontMatter $frontMatter -Key 'labels'
+        $step = Get-FrontMatterValue -FrontMatter $frontMatter -Key 'step'
+
+        if ([string]::IsNullOrWhiteSpace($title) -or [string]::IsNullOrWhiteSpace($labelsCsv) -or [string]::IsNullOrWhiteSpace($step)) {
+            Write-Warn "Template is missing required frontmatter: $($template.FullName)"
+            continue
+        }
+
+        $labels = @($labelsCsv -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        foreach ($label in $labels) {
+            $metadata = Get-LabelMetadata -Label $label
+            if ($DryRun) {
+                Write-Info "Would ensure GitHub label '$label' exists"
+            }
+            else {
+                & gh label create $label --color $metadata.Color --description $metadata.Description --force *> $null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warn "Could not ensure GitHub label '$label'. Skipping guided setup issues."
+                    return
+                }
+            }
+        }
+
+        $existingJson = (& gh issue list --state all --limit 1 --search "`"$title`" in:title" --json number 2>$null) -join "`n"
+        $issueNumber = Get-IssueNumberFromJson -Json $existingJson
+        if ($issueNumber) {
+            Write-Info "Guided setup issue already exists for step $step: $title"
+            if ($title -eq $stepOneTitle) {
+                $stepOneNumber = $issueNumber
+            }
+            continue
+        }
+
+        $bodyFile = Join-Path $WorkDir ("onboarding-body-{0}.md" -f $step)
+        if ($DryRun) {
+            Write-Info "Would create guided setup issue for step $step: $title"
+            continue
+        }
+
+        try {
+            Set-Content -Path $bodyFile -Value $body -NoNewline
+            $createArgs = @('issue', 'create', '--title', $title, '--body-file', $bodyFile)
+            foreach ($label in $labels) {
+                $createArgs += @('--label', $label)
+            }
+            & gh @createArgs *> $null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Info "Created guided setup issue for step $step"
+                $createdJson = (& gh issue list --state all --limit 1 --search "`"$title`" in:title" --json number 2>$null) -join "`n"
+                $createdNumber = Get-IssueNumberFromJson -Json $createdJson
+                if ($title -eq $stepOneTitle) {
+                    $stepOneNumber = $createdNumber
+                }
+            }
+            else {
+                Write-Warn "Could not create guided setup issue for step $step: $title"
+            }
+        }
+        finally {
+            if (Test-Path $bodyFile) {
+                Remove-Item -Path $bodyFile -Force
+            }
+        }
+    }
+
+    if ($stepOneNumber) {
+        if ($DryRun) {
+            Write-Info "Would pin guided setup issue #$stepOneNumber"
+        }
+        else {
+            & gh issue pin -h *> $null
+            if ($LASTEXITCODE -eq 0) {
+                & gh issue pin $stepOneNumber *> $null
+            }
+        }
+    }
+}
+
 function Ensure-PersonalFile {
     param(
         [string]$SourcePath,
@@ -262,21 +447,31 @@ function Invoke-InstallMode {
     Initialize-Git
     Write-VersionFile $CurrentVersion
     Install-Dependencies
+    Create-OnboardingIssues
 
+    Write-Info 'Done!'
     Write-Host ''
     Write-Host 'Next steps:'
     Write-Host '  1. Fill in .env with your Infinite Campus, Canvas, and Google credentials.'
     Write-Host '  2. Review config/personal.yaml for your family details.'
     Write-Host '  3. Open vault/ in Obsidian and start using the templates.'
-    Write-Host '  4. Run .\scripts\setup.ps1 -Update later to pull template updates.'
+    Write-Host '  4. Check the guided GitHub issues that setup created in your personal repo.'
+    Write-Host '  5. Run .\scripts\setup.ps1 -Update later to pull template updates.'
 }
 
 $hasPersonalLayer = (Test-Path (Join-Path $RootDir 'vault')) -or (Test-Path (Join-Path $RootDir '.env')) -or (Test-Path (Join-Path $RootDir 'config/personal.yaml'))
 $mode = if ($Update -or ((Test-Path $VersionFile) -and $hasPersonalLayer)) { 'update' } else { 'install' }
 
-if ($mode -eq 'update') {
-    Invoke-UpdateMode
+try {
+    if ($mode -eq 'update') {
+        Invoke-UpdateMode
+    }
+    else {
+        Invoke-InstallMode
+    }
 }
-else {
-    Invoke-InstallMode
+finally {
+    if ((-not $DryRun) -and (Test-Path $WorkDir)) {
+        Remove-Item -Path $WorkDir -Recurse -Force
+    }
 }

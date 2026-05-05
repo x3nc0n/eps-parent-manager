@@ -2,6 +2,13 @@
 # Personal files such as vault/, .env, and config/personal.yaml are never listed here.
 
 scripts/
+scripts/onboarding/01-family-profile.md
+scripts/onboarding/02-infinite-campus.md
+scripts/onboarding/03-canvas-token.md
+scripts/onboarding/04-google-setup.md
+scripts/onboarding/05-child-notebook.md
+scripts/onboarding/06-verify-connections.md
+scripts/onboarding/07-digest-schedule.md
 mcp-servers/
 skills/
 tools/
